@@ -44,24 +44,39 @@ export class BaseCollection<T>
     super(initialItems || []); // Передаём начальные элементы в конструктор collect.js
 
     // Если передали начальные элементы, подписываемся на события от сущностей,
-    // если они реализуют IObservable.
+    // если они реализуют IObservable и имеют метод getPropertyObservable.
     (initialItems || []).forEach((item) => {
-      if (
-        (item as any).getObservable &&
-        typeof (item as any).getObservable === 'function'
-      ) {
-        const sub = (item as unknown as IObservable)
-          .getPropertyObservable()
-          .subscribe((eventData) => {
-            console.log(eventData);
-            this.eventsSubject.next({
-              type: eventData.event,
-              payload: { item, change: eventData },
-            });
-          });
-        this.entitySubscriptions.push(sub);
-      }
+      this.subscribeToItem(item);
     });
+  }
+
+  /**
+   * Вспомогательный метод для подписки на события наблюдаемой сущности.
+   * Если сущность реализует IObservable и имеет метод getPropertyObservable(),
+   * подписывается на её события и сохраняет подписку.
+   */
+  private subscribeToItem(item: T): void {
+    if (
+      (item as any).getPropertyObservable &&
+      typeof (item as any).getPropertyObservable === 'function'
+    ) {
+      const sub = (item as unknown as IObservable)
+        .getPropertyObservable()
+        .subscribe((eventData) => {
+          this.eventsSubject.next({
+            type: eventData.event,
+            payload: { item, change: eventData },
+          });
+        });
+      const sub2 = (item as unknown as IObservable)
+        .getEntityObservable()
+        .subscribe((eventData) => {
+          if (eventData.event == 'updating') {
+            this.snapshot();
+          }
+        });
+      this.entitySubscriptions.push(sub);
+    }
   }
 
   /**
@@ -79,33 +94,26 @@ export class BaseCollection<T>
   }
 
   /**
+   * Создаёт снимок текущего состояния коллекции с помощью deepClone.
+   */
+  protected resetSnapshot(): void {
+    this.history = [];
+  }
+
+  /**
    * Добавляет элемент в коллекцию, сохраняя предыдущее состояние (Memento)
    * и эмитируя событие 'add'.
    *
-   * Дополнительно, если добавляемая сущность реализует IObservable (то есть имеет метод getObservable),
-   * происходит подписка на её изменения. При получении события от сущности коллекция эмитирует
-   * событие `eventData.event` с payload в виде объекта { item, change }.
+   * Если добавляемая сущность реализует IObservable (то есть имеет метод getPropertyObservable),
+   * происходит подписка на её изменения.
    */
   public add(item: T): void {
     this.snapshot();
     this.push(item); // push наследуется от collect.js
     this.eventsSubject.next({ type: 'add', payload: item });
 
-    // Если сущность является наблюдаемой, подписываемся на её события
-    if (
-      (item as any).getObservable &&
-      typeof (item as any).getObservable === 'function'
-    ) {
-      const sub = (item as unknown as IObservable)
-        .getPropertyObservable()
-        .subscribe((eventData) => {
-          this.eventsSubject.next({
-            type: eventData.event,
-            payload: { item, change: eventData },
-          });
-        });
-      this.entitySubscriptions.push(sub);
-    }
+    // Подписываемся на события сущности, если она наблюдаемая.
+    this.subscribeToItem(item);
   }
 
   /**
@@ -114,15 +122,19 @@ export class BaseCollection<T>
   public remove(item: T): void {
     this.snapshot();
     const filtered = this.all().filter((i) => i !== item);
-    this.replace(filtered); // replace() из collect.js заменяет все элементы
+
+    (this as any).items = filtered;
     this.eventsSubject.next({ type: 'remove', payload: item });
   }
 
   /**
    * Фиксирует изменения коллекции, очищая историю снимков, и эмитирует событие 'commit'.
+   * Здесь также обновляем внутреннее состояние, если необходимо.
    */
   public commit(): void {
-    this.history = [];
+    this.resetSnapshot();
+
+    (this as any).items = this.all();
     this.eventsSubject.next({ type: 'commit', payload: this.all() });
   }
 
@@ -133,7 +145,8 @@ export class BaseCollection<T>
   public rollback(): void {
     if (this.history.length) {
       const lastSnapshot = this.history.pop()!;
-      this.replace(lastSnapshot);
+
+      (this as any).items = lastSnapshot;
       this.eventsSubject.next({ type: 'rollback', payload: this.all() });
     }
   }
@@ -167,7 +180,6 @@ export class BaseCollection<T>
 
   /**
    * Переопределяем метод filter, чтобы возвращать экземпляр BaseCollection<T>.
-   * Объявляем перегрузки, как в collect.js.
    */
   public override filter(fn: (item: T) => boolean): BaseCollection<T>;
   public override filter(
