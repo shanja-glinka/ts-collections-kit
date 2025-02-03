@@ -6,19 +6,24 @@ import { IVisitor } from '../visitors/visitor.contract';
 import { ICollection } from './collection.contract';
 
 /**
- * Класс BaseCollection расширяет функциональность коллекции из collect.js,
- * добавляя поддержку паттернов Memento, Observer и Visitor.
- *
- * Для наследования от collect.js мы используем конструктор, возвращаемый collect([]).
+ * Для наследования от collect.js мы получаем конструктор базовой коллекции.
  */
 const BaseCollectionConstructor = collect([]).constructor as {
   new <T>(items: T[]): CollectJsCollection<T>;
 };
 
+/**
+ * Класс BaseCollection расширяет функциональность коллекции из collect.js,
+ * добавляя поддержку паттернов Memento, Observer и Visitor.
+ */
 export class BaseCollection<T>
   extends BaseCollectionConstructor<T>
   implements ICollection<T>
 {
+  // Индексная сигнатура позволяет добавлять собственные свойства,
+  // даже если базовый класс определяет их как функции.
+  [key: string]: any;
+
   /**
    * История для паттерна Memento.
    */
@@ -33,45 +38,41 @@ export class BaseCollection<T>
   }
 
   /**
-   * Возвращает все элементы коллекции.
-   * В collect.js для этого используется метод all().
+   * Возвращает все элементы коллекции (метод all() из collect.js).
    */
   public getItems(): T[] {
     return this.all();
   }
 
   /**
-   * Создаёт снимок текущего состояния коллекции.
-   * Использует deepClone для создания глубокой копии.
+   * Создаёт снимок текущего состояния коллекции с помощью deepClone.
    */
   protected snapshot(): void {
     this.history.push(deepClone(this.all()));
   }
 
   /**
-   * Добавляет элемент в коллекцию.
-   * Сохраняет снимок состояния, добавляет элемент и эмитирует событие 'add'.
+   * Добавляет элемент в коллекцию, сохраняя предыдущее состояние (Memento)
+   * и эмитируя событие 'add'.
    */
   public add(item: T): void {
     this.snapshot();
-    this.push(item); // Метод push наследуется от collect.js
+    this.push(item); // push наследуется от collect.js
     this.eventsSubject.next({ type: 'add', payload: item });
   }
 
   /**
-   * Удаляет элемент из коллекции.
-   * Сохраняет снимок, затем заменяет внутреннее состояние коллекции отфильтрованным массивом.
+   * Удаляет элемент из коллекции, сохраняет снимок и эмитирует событие 'remove'.
    */
   public remove(item: T): void {
     this.snapshot();
     const filtered = this.all().filter((i) => i !== item);
-    this.replace(filtered); // Метод replace() есть в collect.js для замены всех элементов
+    this.replace(filtered); // replace() из collect.js заменяет все элементы
     this.eventsSubject.next({ type: 'remove', payload: item });
   }
 
   /**
-   * Фиксирует изменения коллекции, очищая историю снимков.
-   * Эмитирует событие 'commit'.
+   * Фиксирует изменения коллекции, очищая историю снимков, и эмитирует событие 'commit'.
    */
   public commit(): void {
     this.history = [];
@@ -79,8 +80,8 @@ export class BaseCollection<T>
   }
 
   /**
-   * Откатывает последнее изменение, восстанавливая состояние коллекции из истории.
-   * Эмитирует событие 'rollback'.
+   * Откатывает последнее изменение коллекции, восстанавливая состояние из истории,
+   * и эмитирует событие 'rollback'.
    */
   public rollback(): void {
     if (this.history.length) {
@@ -102,5 +103,37 @@ export class BaseCollection<T>
    */
   public subscribe(callback: (event: ICollectionEvent<T>) => void): void {
     this.eventsSubject.subscribe(callback);
+  }
+
+  /**
+   * Переопределяем метод map, чтобы возвращать экземпляр BaseCollection<U>.
+   * Ключевое слово override обязательно, так как метод определён в базовом классе.
+   */
+  public override map<U>(
+    callback: (item: T, key?: number) => U,
+  ): BaseCollection<U> {
+    const mapped = super.map(callback); // mapped имеет тип CollectJsCollection<U>
+    return new BaseCollection<U>(mapped.all());
+  }
+
+  /**
+   * Переопределяем метод filter, чтобы возвращать экземпляр BaseCollection<T>.
+   */
+  public override filter(
+    callback: (item: T, key?: number) => boolean,
+  ): BaseCollection<T> {
+    const filtered = super.filter(callback);
+    return new BaseCollection<T>(filtered.all());
+  }
+
+  /**
+   * Переопределяем метод reduce, чтобы привести его к ожидаемой сигнатуре.
+   */
+  public override reduce<U>(
+    callback: (carry: U, item: T, key?: number) => U,
+    initial: U,
+  ): U {
+    // Предполагаем, что при передаче initial значение никогда не будет null.
+    return super.reduce(callback, initial) as U;
   }
 }
