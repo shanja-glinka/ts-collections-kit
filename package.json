@@ -1,0 +1,60 @@
+{
+  "name": "@shanja-glinka/ts-collections",
+  "version": "0.0.1",
+  "main": "dist/cjs/main.cjs",
+  "module": "dist/esm/main.js",
+  "types": "dist/esm/main.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/cjs/main.cjs",
+      "import": "./dist/esm/main.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "rename:cjs": "node rename-cjs.esm.js",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build": "rimraf dist && npm run build:cjs && npm run rename:cjs && npm run build:esm",
+    "watch": "concurrently \"tsc -p tsconfig.cjs.json --watch\" \"tsc -p tsconfig.esm.json --watch\"",
+    "prepare": "npm run build",
+    "start": "ts-node src/main.ts",
+    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "lint:check": "eslint \"src/**/*.{ts,js}\""
+  },
+  "type": "module",
+  "keywords": [],
+  "author": "Shanja Glinka",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "collect.js": "^4.36.1",
+    "lodash": "^4.17.21",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "@typescript-eslint/eslint-plugin": "^8.21.0",
+    "@typescript-eslint/parser": "^8.21.0",
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^10.0.1",
+    "eslint-plugin-prettier": "^5.2.3",
+    "prettier": "^3.4.2",
+    "rimraf": "^6.0.1",
+    "source-map-support": "^0.5.21",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.1.0",
+    "ts-loader": "^9.4.3",
+    "ts-node": "^10.9.1",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.1.3"
+  }
+}
