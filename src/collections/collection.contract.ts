@@ -3,10 +3,23 @@ import { ICollectionEvent } from '../observers/collection-events';
 import { IVisitor } from '../visitors/visitor.contract';
 
 /**
- * Интерфейс коллекции, расширяющий возможности collect.js и добавляющий
- * методы для паттернов Memento, Observer и Visitor.
+ * Интерфейс коллекции, расширяющий базовую коллекцию collect.js,
+ * но исключающий методы map, filter и reduce, чтобы задать их наши версии.
  */
-export interface ICollection<T> extends CollectJsCollection<T> {
+export interface ICollection<T>
+  extends Omit<CollectJsCollection<T>, 'map' | 'filter' | 'reduce'> {
+  // Наши версии методов:
+  map<U>(callback: (item: T, index: any) => U): ICollection<U>;
+  // Для filter задаём перегрузки, как в collect.js:
+  filter(fn: (item: T) => boolean): ICollection<T>;
+  filter(fn: (item: T, key?: any) => boolean): ICollection<T>;
+  reduce<U>(
+    callback: (carry: U | null, item: T, key?: any) => U,
+    initial: U,
+  ): U;
+
+  // Дополнительные методы:
+
   /** Добавляет элемент в коллекцию */
   add(item: T): void;
   /** Удаляет элемент из коллекции */

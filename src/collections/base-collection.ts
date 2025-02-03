@@ -6,7 +6,7 @@ import { IVisitor } from '../visitors/visitor.contract';
 import { ICollection } from './collection.contract';
 
 /**
- * Для наследования от collect.js мы получаем конструктор базовой коллекции.
+ * Получаем конструктор базовой коллекции из collect.js.
  */
 const BaseCollectionConstructor = collect([]).constructor as {
   new <T>(items: T[]): CollectJsCollection<T>;
@@ -20,7 +20,7 @@ export class BaseCollection<T>
   extends BaseCollectionConstructor<T>
   implements ICollection<T>
 {
-  // Индексная сигнатура позволяет добавлять собственные свойства,
+  // Индексная сигнатура позволяет добавлять дополнительные свойства,
   // даже если базовый класс определяет их как функции.
   [key: string]: any;
 
@@ -38,7 +38,7 @@ export class BaseCollection<T>
   }
 
   /**
-   * Возвращает все элементы коллекции (метод all() из collect.js).
+   * Возвращает все элементы коллекции (аналог метода all() из collect.js).
    */
   public getItems(): T[] {
     return this.all();
@@ -107,33 +107,41 @@ export class BaseCollection<T>
 
   /**
    * Переопределяем метод map, чтобы возвращать экземпляр BaseCollection<U>.
-   * Ключевое слово override обязательно, так как метод определён в базовом классе.
+   * Сигнатура должна соответствовать базовой:
+   *   map<T>(fn: (item: Item, index: any) => T): Collection<T>;
    */
   public override map<U>(
-    callback: (item: T, key?: number) => U,
+    callback: (item: T, index: any) => U,
   ): BaseCollection<U> {
-    const mapped = super.map(callback); // mapped имеет тип CollectJsCollection<U>
+    const mapped = super.map(callback) as CollectJsCollection<U>;
     return new BaseCollection<U>(mapped.all());
   }
 
   /**
    * Переопределяем метод filter, чтобы возвращать экземпляр BaseCollection<T>.
+   * Объявляем перегрузки, как в collect.js:
+   *   filter(fn: (item: Item) => boolean): Collection<Item>;
+   *   filter(fn: (item: Item, key?: any) => boolean): Collection<Item>;
    */
+  public override filter(fn: (item: T) => boolean): BaseCollection<T>;
   public override filter(
-    callback: (item: T, key?: number) => boolean,
+    fn: (item: T, key?: any) => boolean,
+  ): BaseCollection<T>;
+  public override filter(
+    fn: (item: T, key?: any) => boolean,
   ): BaseCollection<T> {
-    const filtered = super.filter(callback);
+    const filtered = super.filter(fn) as CollectJsCollection<T>;
     return new BaseCollection<T>(filtered.all());
   }
 
   /**
-   * Переопределяем метод reduce, чтобы привести его к ожидаемой сигнатуре.
+   * Переопределяем метод reduce, чтобы привести его к ожидаемой сигнатуре:
+   *   reduce<T>(fn: (_carry: T | null, item: Item) => T, carry?: T): any;
    */
   public override reduce<U>(
-    callback: (carry: U, item: T, key?: number) => U,
+    callback: (carry: U | null, item: T, key?: any) => U,
     initial: U,
   ): U {
-    // Предполагаем, что при передаче initial значение никогда не будет null.
     return super.reduce(callback, initial) as U;
   }
 }
