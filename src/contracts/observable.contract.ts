@@ -1,5 +1,9 @@
 import { Observable, Subscription } from 'rxjs';
-import { EntityEvent } from '../observers/collection-events';
+import {
+  EntityEvent,
+  IObservableEvent,
+  IPropertyEvent,
+} from '../observers/observable.interface';
 
 export interface IObservable {
   /**
@@ -12,9 +16,33 @@ export interface IObservable {
   ): Subscription | any;
 
   /**
+   * Возвращает Observable, который эмитит события изменения отдельных свойств сущности.
+   */
+  getEntityObservable(): Observable<{
+    event: EntityEvent;
+    payload?: any;
+  }>;
+
+  /**
+   * Подписывается на события жизненного цикла сущности.
+   *
+   * @param handler Функция-обработчик, получающая объект события с его типом и дополнительными данными.
+   * @returns Объект Subscription для управления подпиской.
+   */
+  subscribeEntityEvents(handler: (data: IObservableEvent) => void): any;
+
+  /**
+   * Подписывается на события жизненного цикла .
+   *
+   * @param handler Функция-обработчик, получающая объект события с его типом и дополнительными данными.
+   * @returns Объект Subscription для управления подпиской.
+   */
+  subscribePropertyEvents(handler: (data: IPropertyEvent) => void): any;
+
+  /**
    * Возвращает Observable, который эмитит события изменения сущности.
    */
-  getObservable(): Observable<any>;
+  getPropertyObservable(): Observable<any>;
 
   /**
    * Метод для вызова события создания сущности до сохранения.

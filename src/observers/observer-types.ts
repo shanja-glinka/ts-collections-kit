@@ -1,4 +1,4 @@
-import { EntityEvent } from './collection-events';
+import { EntityEvent } from './observable.interface';
 
 /**
  * Интерфейс обработчика событий для сущностей.

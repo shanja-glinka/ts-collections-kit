@@ -1,5 +1,5 @@
 import collect, { Collection as CollectJsCollection } from 'collect.js';
-import { Subject } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
 import { IObservable } from '../contracts/observable.contract';
 import { ICollectionEvent } from '../observers/collection-events';
 import { deepClone } from '../utils/clone';
@@ -35,8 +35,33 @@ export class BaseCollection<T>
    */
   protected eventsSubject = new Subject<ICollectionEvent<T>>();
 
+  /**
+   * Здесь будем хранить подписки на события сущностей.
+   */
+  protected entitySubscriptions: Subscription[] = [];
+
   constructor(initialItems?: T[]) {
     super(initialItems || []); // Передаём начальные элементы в конструктор collect.js
+
+    // Если передали начальные элементы, подписываемся на события от сущностей,
+    // если они реализуют IObservable.
+    (initialItems || []).forEach((item) => {
+      if (
+        (item as any).getObservable &&
+        typeof (item as any).getObservable === 'function'
+      ) {
+        const sub = (item as unknown as IObservable)
+          .getPropertyObservable()
+          .subscribe((eventData) => {
+            console.log(eventData);
+            this.eventsSubject.next({
+              type: eventData.event,
+              payload: { item, change: eventData },
+            });
+          });
+        this.entitySubscriptions.push(sub);
+      }
+    });
   }
 
   /**
@@ -59,7 +84,7 @@ export class BaseCollection<T>
    *
    * Дополнительно, если добавляемая сущность реализует IObservable (то есть имеет метод getObservable),
    * происходит подписка на её изменения. При получении события от сущности коллекция эмитирует
-   * событие 'entity-change' с payload в виде объекта { item, change }.
+   * событие `eventData.event` с payload в виде объекта { item, change }.
    */
   public add(item: T): void {
     this.snapshot();
@@ -71,14 +96,15 @@ export class BaseCollection<T>
       (item as any).getObservable &&
       typeof (item as any).getObservable === 'function'
     ) {
-      (item as unknown as IObservable)
-        .getObservable()
+      const sub = (item as unknown as IObservable)
+        .getPropertyObservable()
         .subscribe((eventData) => {
           this.eventsSubject.next({
-            type: 'entity-change',
+            type: eventData.event,
             payload: { item, change: eventData },
           });
         });
+      this.entitySubscriptions.push(sub);
     }
   }
 
@@ -122,8 +148,10 @@ export class BaseCollection<T>
   /**
    * Подписывается на события коллекции.
    */
-  public subscribe(callback: (event: ICollectionEvent<T>) => void): void {
-    this.eventsSubject.subscribe(callback);
+  public subscribe(
+    callback: (event: ICollectionEvent<T>) => void,
+  ): Subscription {
+    return this.eventsSubject.subscribe(callback);
   }
 
   /**

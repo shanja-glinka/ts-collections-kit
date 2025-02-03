@@ -1,5 +1,3 @@
-// src/entities/BaseEntity.ts
-
 import { plainToInstance } from 'class-transformer';
 import { validate, ValidationError } from 'class-validator';
 import 'reflect-metadata';
@@ -7,7 +5,12 @@ import { Observable, Subject } from 'rxjs';
 import { IBaseTransformEntityContract } from '../contracts/base-transform-entity.contract';
 import { IObservable } from '../contracts/observable.contract';
 import { IBaseEntity } from '../interfaces/base.entity.interface';
-import { EntityEvent } from '../observers/collection-events';
+import {
+  EntityEvent,
+  IObservableEvent,
+  IPropertyEvent,
+  IPropertyEventPayload,
+} from '../observers/observable.interface';
 import { SoftDeletableEntity } from './soft-deletable-entity';
 
 /**
@@ -15,78 +18,104 @@ import { SoftDeletableEntity } from './soft-deletable-entity';
  * Расширяет SoftDeletableEntity, обеспечивает преобразование plain объектов в экземпляры,
  * валидацию и эмит событий жизненного цикла (Observer).
  * Также реализует интерфейс IObservable, позволяющий отслеживать изменения отдельных свойств.
+ *
+ * Теперь изменения свойств перехватываются через Proxy – не нужно вручную создавать аксессоры для каждого поля.
  */
 export class BaseEntity
   extends SoftDeletableEntity
   implements IBaseEntity, IBaseTransformEntityContract, IObservable
 {
-  createdAt!: Date;
-  updatedAt!: Date;
-  createdBy!: string;
-  updatedBy!: string;
+  // Можно объявлять свойства как обычно.
+  // Если требуется, чтобы они автоматически отслеживались, Proxy перехватит их запись.
+  public createdAt!: Date;
+  public updatedAt!: Date;
+  public createdBy!: string;
+  public updatedBy!: string;
 
   /**
    * RxJS Subject для эмита событий жизненного цикла сущности.
-   * Через него эмитируются события, такие как: creating, created, updating, updated, deleting, deleted, restoring, restored.
+   * Эмитируются события: creating, created, updating, updated, deleting, deleted, restoring, restored.
    */
-  protected eventSubject = new Subject<{ event: EntityEvent; payload?: any }>();
+  protected eventSubject = new Subject<IObservableEvent>();
 
   /**
    * Subject для отслеживания изменений отдельных свойств сущности.
-   * События из него содержат информацию о том, какое свойство изменилось, его старое и новое значение.
+   * События содержат: название свойства, старое и новое значение.
    */
-  private propertyChangeSubject = new Subject<{
-    property: string;
-    oldValue: any;
-    newValue: any;
-  }>();
+  private propertyChangeSubject = new Subject<IPropertyEvent>();
 
   /**
    * Возвращает Observable, который эмитит события изменения отдельных свойств сущности.
-   * Клиенты могут подписаться на него для получения детальной информации об изменениях.
    */
-  public getObservable(): Observable<{
-    property: string;
-    oldValue: any;
-    newValue: any;
+  public getEntityObservable(): Observable<{
+    event: EntityEvent;
+    payload?: any;
   }> {
+    return this.eventSubject.asObservable();
+  }
+
+  /**
+   * Возвращает Observable, который эмитит события изменения отдельных свойств сущности.
+   */
+  public getPropertyObservable(): Observable<IPropertyEvent> {
     return this.propertyChangeSubject.asObservable();
   }
 
   /**
-   * Метод для централизованного изменения значения свойства.
-   * Если новое значение отличается от старого, эмитируются события:
-   *  - Перед обновлением: EntityEvent.Updating (с информацией о свойстве, старом и новом значениях)
-   *  - Событие изменения отдельного свойства через propertyChangeSubject
-   *  - После обновления: EntityEvent.Updated (с информацией о свойстве и его новом значении)
+   * Подписывается на события жизненного цикла сущности.
    *
-   * @param key Имя свойства, которое изменяется.
-   * @param value Новое значение свойства.
+   * @param handler Функция-обработчик, получающая объект события с его типом и дополнительными данными.
+   * @returns Объект Subscription для управления подпиской.
    */
-  protected setAttribute<K extends keyof this>(key: K, value: this[K]): void {
-    const oldValue = this[key];
+  public subscribeEntityEvents(handler: (data: IObservableEvent) => void) {
+    return this.eventSubject.subscribe(handler);
+  }
 
-    if (oldValue !== value) {
-      // Эмитируем событие обновления до фактического изменения значения
-      this.emitEntityEvent(EntityEvent.Updating, {
-        key,
-        oldValue,
-        newValue: value,
-      });
+  /**
+   * Подписывается на события жизненного цикла .
+   *
+   * @param handler Функция-обработчик, получающая объект события с его типом и дополнительными данными.
+   * @returns Объект Subscription для управления подпиской.
+   */
+  public subscribePropertyEvents(handler: (data: IPropertyEvent) => void) {
+    return this.propertyChangeSubject.subscribe(handler);
+  }
 
-      // Отправляем событие о конкретном изменении свойства
-      this.propertyChangeSubject.next({
-        property: key as string,
-        oldValue,
-        newValue: value,
-      });
-
-      // Обновляем значение свойства
-      this[key] = value;
-
-      // Эмитируем событие после обновления значения
-      this.emitEntityEvent(EntityEvent.Updated, { key, value });
-    }
+  /**
+   * В конструкторе мы оборачиваем экземпляр в Proxy, который перехватывает операции записи.
+   * Это позволяет не создавать для каждого свойства отдельный аксессор.
+   */
+  constructor(...args: any[]) {
+    super();
+    return new Proxy(this, {
+      set: (target, property, value, receiver) => {
+        // Не обрабатываем специальные свойства и символы.
+        if (typeof property === 'string' && property[0] !== '_') {
+          // Извлекаем старое значение (если оно уже есть)
+          const oldValue = target[property as keyof this];
+          // Если значение не меняется — ничего не делаем.
+          if (oldValue !== value) {
+            const properties = {
+              property,
+              oldValue,
+              newValue: value,
+            };
+            // Эмитируем событие до обновления
+            target.emitEntityEvent(EntityEvent.Updating, properties);
+            // Производим обновление свойства.
+            // Чтобы не попасть в рекурсию, используем Reflect.set напрямую.
+            Reflect.set(target, property, value);
+            // Эмитируем событие изменения конкретного свойства
+            target.emitPropertyEvent(EntityEvent.Updated, properties);
+            // Эмитируем событие после обновления
+            target.emitEntityEvent(EntityEvent.Updated, properties);
+          }
+          return true;
+        }
+        // Если свойство начинается с "_" или не является строкой – просто обновляем.
+        return Reflect.set(target, property, value, receiver);
+      },
+    });
   }
 
   /**
@@ -133,18 +162,6 @@ export class BaseEntity
   }
 
   /**
-   * Подписывается на события жизненного цикла сущности.
-   *
-   * @param handler Функция-обработчик, получающая объект события с его типом и дополнительными данными.
-   * @returns Объект Subscription для управления подпиской.
-   */
-  public subscribeEntityEvents(
-    handler: (data: { event: EntityEvent; payload?: any }) => void,
-  ) {
-    return this.eventSubject.subscribe(handler);
-  }
-
-  /**
    * Эмитирует событие жизненного цикла сущности.
    *
    * @param event Тип события (например, creating, updated и т.д.).
@@ -152,6 +169,19 @@ export class BaseEntity
    */
   protected emitEntityEvent(event: EntityEvent, payload?: any): void {
     this.eventSubject.next({ event, payload });
+  }
+
+  /**
+   * Эмитирует событие жизненного цикла свойства.
+   *
+   * @param event Тип события (например, creating, updated и т.д.).
+   * @param payload Дополнительные данные, связанные с событием.
+   */
+  protected emitPropertyEvent(
+    event: EntityEvent,
+    payload: IPropertyEventPayload,
+  ): void {
+    this.propertyChangeSubject.next({ event, payload });
   }
 
   // Методы для явного вызова событий жизненного цикла
