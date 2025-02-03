@@ -14,14 +14,13 @@
     "dist"
   ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "rename:cjs": "node rename-cjs.esm.js",
     "build:esm": "tsc -p tsconfig.esm.json",
     "build": "rimraf dist && npm run build:cjs && npm run rename:cjs && npm run build:esm",
     "watch": "concurrently \"tsc -p tsconfig.cjs.json --watch\" \"tsc -p tsconfig.esm.json --watch\"",
-    "prepare": "npm run build",
     "start": "ts-node src/main.ts",
+    "test": "npm run build && ts-node dist/cjs/tests/test.cjs",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "lint:check": "eslint \"src/**/*.{ts,js}\""
   },

@@ -1,4 +1,4 @@
-import { Subscription } from 'rxjs';
+import { Observable, Subscription } from 'rxjs';
 import { EntityEvent } from '../observers/collection-events';
 
 export interface IObservable {
@@ -10,6 +10,11 @@ export interface IObservable {
   subscribeEntityEvents(
     handler: (data: { event: EntityEvent; payload?: any }) => void,
   ): Subscription | any;
+
+  /**
+   * Возвращает Observable, который эмитит события изменения сущности.
+   */
+  getObservable(): Observable<any>;
 
   /**
    * Метод для вызова события создания сущности до сохранения.
