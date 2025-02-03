@@ -1,4 +1,4 @@
-import { ISoftDeletableEntity } from '../contracts/soft-deletable.interface';
+import { ISoftDeletableEntity } from '../interfaces/soft-deletable.interface';
 
 /**
  * Базовый класс для сущностей с поддержкой мягкого удаления.

@@ -1,10 +1,10 @@
+import { BaseEntity } from '../../entities/base-entity';
 import {
   IFileType,
   INotification,
   NotificationServiceEnum,
   NotificationTypeEnum,
-} from '../interfaces/notification.interface';
-import { BaseEntity } from './base-entity';
+} from '../../interfaces/notification.interface';
 
 /**
  * Класс уведомления.

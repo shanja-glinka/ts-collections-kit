@@ -3,9 +3,10 @@ import { validate, ValidationError } from 'class-validator';
 import 'reflect-metadata';
 import { Subject } from 'rxjs';
 import { IBaseTransformEntityContract } from '../contracts/base-transform-entity.contract';
-import { IBaseEntity } from '../contracts/base.entity.interface';
+import { IObservable } from '../contracts/observable.contract';
+import { IBaseEntity } from '../interfaces/base.entity.interface';
 import { EntityEvent } from '../observers/collection-events';
-import { SoftDeletableEntity } from './soft-deletable.entity';
+import { SoftDeletableEntity } from './soft-deletable-entity';
 
 /**
  * Базовый класс для сущностей.
@@ -14,7 +15,7 @@ import { SoftDeletableEntity } from './soft-deletable.entity';
  */
 export class BaseEntity
   extends SoftDeletableEntity
-  implements IBaseEntity, IBaseTransformEntityContract
+  implements IBaseEntity, IBaseTransformEntityContract, IObservable
 {
   createdAt!: Date;
   updatedAt!: Date;
@@ -120,5 +121,45 @@ export class BaseEntity
     this.emitEntityEvent(EntityEvent.Created);
   }
 
-  // Аналогичные методы можно добавить для событий удаления, сохранения, восстановления и т.д.
+  /**
+   * Метод для вызова события обновления сущности до сохранения.
+   */
+  public updating(): void {
+    this.emitEntityEvent(EntityEvent.Updating);
+  }
+
+  /**
+   * Метод для вызова события после успешного обновления создания сущности.
+   */
+  public updated(): void {
+    this.emitEntityEvent(EntityEvent.Updated);
+  }
+
+  /**
+   * Метод для вызова события до удаления сущности.
+   */
+  public deleting(): void {
+    this.emitEntityEvent(EntityEvent.Deleting);
+  }
+
+  /**
+   * Метод для вызова события после успешного удаления сущности.
+   */
+  public deleted(): void {
+    this.emitEntityEvent(EntityEvent.Deleted);
+  }
+
+  /**
+   * Метод для вызова события до восстановления сущности.
+   */
+  public restoring(): void {
+    this.emitEntityEvent(EntityEvent.Restoring);
+  }
+
+  /**
+   * Метод для вызова события после успешного восстановления сущности.
+   */
+  public restored(): void {
+    this.emitEntityEvent(EntityEvent.Restored);
+  }
 }

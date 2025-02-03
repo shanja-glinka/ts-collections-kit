@@ -1,4 +1,4 @@
-import { IBaseEntity } from '../contracts/base.entity.interface';
+import { IBaseEntity } from './base.entity.interface';
 export interface IFile extends IBaseEntity {
   /**
    * Relative path to the file.
