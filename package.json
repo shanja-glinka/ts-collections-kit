@@ -26,9 +26,17 @@
     "lint:check": "eslint \"src/**/*.{ts,js}\""
   },
   "type": "module",
-  "keywords": [],
+  "keywords": [
+    "collection",
+    "laravel",
+    "typescript",
+    "facade",
+    "memento",
+    "visitor",
+    "observer"
+  ],
   "author": "Shanja Glinka",
-  "license": "ISC",
+  "license": "MIT",
   "description": "",
   "dependencies": {
     "class-transformer": "^0.5.1",
