@@ -1,8 +1,4 @@
 import { BaseCollection } from '../collections/base-collection';
-import {
-  NotificationServiceEnum,
-  NotificationTypeEnum,
-} from '../interfaces/notification.interface';
 import { Notification } from './entities/notification.entity';
 import { NotificationReadVisitor } from './visitors/notification-read-visitor';
 
@@ -14,20 +10,6 @@ const notifications2: Notification[] = [];
 for (let i = 1; i <= 10; i++) {
   const n = new Notification();
   n.id = `${i}`;
-  n.userId = `user${i}`;
-  n.authorId = i % 2 === 0 ? `author${i}` : null;
-  n.postId = i % 3 === 0 ? `post${i}` : null;
-
-  if (i % 3 === 1) {
-    n.type = NotificationTypeEnum.MESSAGE;
-  } else if (i % 3 === 2) {
-    n.type = NotificationTypeEnum.REMIND;
-  } else {
-    n.type = NotificationTypeEnum.HOT;
-  }
-
-  n.service = NotificationServiceEnum.PATH;
-  n.image = null;
   n.text = `Текст уведомления номер ${i}`;
   n.isRead = false;
   n.link = `http://example.com/notification/${i}`;
@@ -54,9 +36,15 @@ for (let i = 1; i <= 10; i++) {
   }
 }
 
-// Создаем коллекцию уведомлений с начальными элементами (9 уведомлений)
-const notificationsCollection = new BaseCollection<Notification>(notifications);
+console.log(`
+// ===================================================================
+// 1. Тестирование базового функционала коллекции с опциями по умолчанию
+// (опции не включены, поэтому снапшоты и транзакции не работают)
+// ===================================================================
+`);
 
+console.log('\n=== Тестирование базовой коллекции (опции отключены) ===');
+const notificationsCollection = new BaseCollection<Notification>(notifications);
 // Добавляем 10-е уведомление в коллекцию
 notificationsCollection.add(notifications2[0]);
 
@@ -75,94 +63,88 @@ const subscription = notificationsCollection.subscribe((event) => {
 });
 
 // Выводим исходное состояние уведомлений
-console.log('Исходное состояние уведомлений:');
+console.log('\nИсходное состояние уведомлений:');
 notificationsCollection.getItems().forEach((n) => {
-  console.log(`Notification (user: ${n.userId}) - isRead: ${n.isRead}`);
+  console.log(`Notification (id: ${n.id}) - isRead: ${n.isRead}`);
 });
 
 // Применяем Visitor, который помечает уведомления как прочитанные (isRead = true)
 const readVisitor = new NotificationReadVisitor();
 notificationsCollection.accept(readVisitor);
 
-// Выводим состояние уведомлений после применения NotificationReadVisitor
 console.log(
   '\nСостояние уведомлений после применения NotificationReadVisitor:',
 );
 notificationsCollection.getItems().forEach((n) => {
-  console.log(`Notification (user: ${n.userId}) - isRead: ${n.isRead}`);
+  console.log(`Notification (id: ${n.id}) - isRead: ${n.isRead}`);
 });
 
-//
-// ----- Тестирование удаления -----
-//
+console.log(`
+// ===================================================================
+// 2. Тестирование удаления уведомления
+// ===================================================================
+`);
 
-// Удалим уведомление с id "5" (user5)
-console.log(`\nУдалим уведомление с id "5" (user5)`);
+console.log(`\nУдалим уведомление с id "5"`);
 const itemToRemove = notificationsCollection
   .getItems()
   .find((n) => n.id === '5');
 if (itemToRemove) {
   notificationsCollection.remove(itemToRemove);
-  console.log(`->Количество уведомлений: ${notificationsCollection.count()}`);
+  console.log(
+    `-> Количество уведомлений после удаления: ${notificationsCollection.count()}`,
+  );
   console.log(`Уведомление с id ${itemToRemove.id} удалено.`);
-  console.log(`->Количество уведомлений: ${notificationsCollection.count()}`);
+  console.log(`-> Количество уведомлений: ${notificationsCollection.count()}`);
 }
 
-//
-// ----- Тестирование коммита -----
-//
-// Изменим какое-либо уведомление (например, поменяем isRead на false для первого элемента)
+console.log(`
+// ===================================================================
+// 3. Тестирование commit/rollback (без транзакций, так как опции отключены)
+// ===================================================================
+`);
+
 const firstItem = notificationsCollection.getItems()[0];
 if (firstItem) {
   firstItem.isRead = false;
   console.log(`\nИзменили свойство isRead первого уведомления на false.`);
   console.log(
-    `->Количество непрочитанных уведомлений: ${notificationsCollection.reduce(
-      (carry, n) => {
-        return (carry ?? 0) + (n.isRead ? 0 : 1);
-      },
+    `-> Количество непрочитанных уведомлений: ${notificationsCollection.reduce(
+      (carry, n) => (carry ?? 0) + (n.isRead ? 0 : 1),
       0,
     )}`,
   );
 }
-// Выполним commit изменений коллекции
 console.log(`\nВыполним commit изменений коллекции`);
 notificationsCollection.commit();
-console.log('->Коллекция зафиксирована (commit).');
+console.log('-> Коллекция зафиксирована (commit).');
 
-//
-// ----- Тестирование rollback -----
-//
-// Изменим еще одно уведомление
 const secondItem = notificationsCollection.getItems()[1];
 if (secondItem) {
   secondItem.isRead = false;
   console.log(`\nИзменили свойство isRead второго уведомления на false.`);
   console.log(
-    `->Количество непрочитанных уведомлений: ${notificationsCollection.reduce(
-      (carry, n) => {
-        return (carry ?? 0) + (n.isRead ? 0 : 1);
-      },
+    `-> Количество непрочитанных уведомлений: ${notificationsCollection.reduce(
+      (carry, n) => (carry ?? 0) + (n.isRead ? 0 : 1),
       0,
     )}`,
   );
 }
-// Откатим последнее изменение
 notificationsCollection.rollback();
 console.log('\nОткат последнего изменения (rollback).');
 console.log(
-  `->Количество непрочитанных уведомлений: ${notificationsCollection.reduce(
-    (carry, n) => {
-      return (carry ?? 0) + (n.isRead ? 0 : 1);
-    },
+  `-> Количество непрочитанных уведомлений: ${notificationsCollection.reduce(
+    (carry, n) => (carry ?? 0) + (n.isRead ? 0 : 1),
     0,
   )}`,
 );
 
-//
-// ----- Тестирование filter -----
-//
-// Отфильтруем уведомления, у которых isRead === true
+console.log(`
+// ===================================================================
+// 4. Тестирование операций трансформации (filter)
+// ===================================================================
+`);
+
 const readNotifications = notificationsCollection.filter(
   (n) => n.isRead === true,
 );
@@ -174,8 +156,99 @@ console.log(
 if (emittedEvents.length > 0) {
   console.log(`\nЭмитированные события коллекции: ${emittedEvents.length}`);
 } else {
-  console.error('\n->События не были эмитированы!');
+  console.error('\n-> События не были эмитированы!');
 }
 
 // Отписываемся от событий
 subscription.unsubscribe();
+
+console.log(`
+// ===================================================================
+// 5. Тестирование коллекции с включенными опциями (снапшоты и транзакции)
+// ===================================================================
+`);
+console.log(
+  '\n=== Тестирование коллекции с включенными опциями (snapshots & transactions) ===',
+);
+const notificationsCollectionTx = new BaseCollection<Notification>(
+  notifications,
+  {
+    enableSnapshots: true,
+    enableTransactions: true,
+  },
+);
+
+// Добавляем уведомление, чтобы проверить работу снапшотов
+notificationsCollectionTx.add(notifications2[0]);
+console.log(
+  `Добавили уведомление, коллекция имеет ${notificationsCollectionTx.count()} элементов.`,
+);
+
+// Начнем транзакцию
+try {
+  const txToken = notificationsCollectionTx.beginTransaction();
+  console.log(`Транзакция начата, токен: ${txToken}`);
+
+  // Выполняем несколько изменений в рамках транзакции
+  const txItem = notificationsCollectionTx.getItems()[0];
+  if (txItem) {
+    txItem.isRead = false;
+    console.log(`В транзакции: изменили isRead первого уведомления на false.`);
+  }
+  notificationsCollectionTx.add(new Notification()); // Добавляем пустое уведомление для теста
+
+  // Завершаем транзакцию
+  const commitToken = notificationsCollectionTx.commitTransaction();
+  console.log(`Транзакция завершена, токен: ${commitToken}`);
+} catch (error) {
+  console.error('Ошибка транзакции:', error);
+}
+
+// Тестируем rollback транзакции: начинаем новую транзакцию, вносим изменения и затем откатываем
+try {
+  const txToken = notificationsCollectionTx.beginTransaction();
+  console.log(`Новая транзакция начата, токен: ${txToken}`);
+  console.log(`\nУдалим уведомление с id "5"`);
+  const itemToRemove = notificationsCollectionTx
+    .getItems()
+    .find((n) => n.id === '5');
+  if (itemToRemove) {
+    notificationsCollectionTx.remove(itemToRemove);
+    console.log(
+      `-> Количество уведомлений после удаления: ${notificationsCollectionTx.count()}`,
+    );
+    console.log(`Уведомление с id ${itemToRemove.id} удалено.`);
+    console.log(
+      `-> Количество уведомлений: ${notificationsCollectionTx.count()}`,
+    );
+  }
+
+  const txItem2 = notificationsCollectionTx.getItems()[1];
+  if (txItem2) {
+    txItem2.isRead = true;
+    console.log(`В транзакции: изменили isRead второго уведомления на true.`);
+  }
+  // Выполняем rollback
+  notificationsCollectionTx.rollbackTransaction();
+  console.log(`-> Записей после отката: ${notificationsCollectionTx.count()}`);
+  console.log(
+    `-> isRead второго уведомления: ${notificationsCollectionTx.getItems()[1].isRead}`,
+  );
+  console.log(`Откат транзакции выполнен.`);
+} catch (error) {
+  console.error('Ошибка транзакции:', error);
+}
+
+console.log(`
+// ===================================================================
+// 6. Тестирование операций трансформации (map) с включенными опциями
+// ===================================================================
+`);
+const mappedCollection = notificationsCollectionTx.map((n) => {
+  // Пример: создаем копию уведомления, в которой меняем флаг isRead
+  const newN = { ...n, isRead: !n.isRead };
+  return newN;
+});
+console.log(
+  `\nРезультат map: исходное количество элементов: ${notificationsCollectionTx.count()}, новая коллекция: ${mappedCollection.count()}`,
+);

@@ -1,17 +1,17 @@
 /**
- * Контракт для трансформации plain объектов в экземпляры сущностей.
- * Можно расширять данный контракт при необходимости.
+ * Контракт для преобразования обычных (plain) объектов в экземпляры сущностей.
+ * Этот контракт можно расширять при необходимости.
  */
 export abstract class IBaseTransformEntityContract {
   /**
-   * Transforms a plain object to an instance of the current class and validates it.
+   * Преобразует обычный объект в экземпляр текущего класса и выполняет его валидацию.
    *
-   * @param plain The plain object to transform.
-   * @returns The transformed and validated instance.
+   * @param plain Обычный объект для преобразования.
+   * @returns Преобразованный и валидированный экземпляр.
    *
-   * @throws Error if validation fails.
+   * @throws Ошибка, если валидация не проходит.
    */
   static plainToInstance<T>(this: new () => T, plain: object): Promise<T> {
-    throw new Error('Method not implemented.');
+    throw new Error('Метод не реализован.');
   }
 }

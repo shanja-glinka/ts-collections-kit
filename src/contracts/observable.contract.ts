@@ -8,7 +8,9 @@ import {
 export interface IObservable {
   /**
    * Подписывается на события жизненного цикла сущности.
+   *
    * @param handler Функция-обработчик, принимающая объект с именем события и дополнительными данными.
+   *
    * @returns Объект Subscription для управления подпиской.
    */
   subscribeEntityEvents(
@@ -27,6 +29,7 @@ export interface IObservable {
    * Подписывается на события жизненного цикла сущности.
    *
    * @param handler Функция-обработчик, получающая объект события с его типом и дополнительными данными.
+   *
    * @returns Объект Subscription для управления подпиской.
    */
   subscribeEntityEvents(handler: (data: IObservableEvent) => void): any;
@@ -35,6 +38,7 @@ export interface IObservable {
    * Подписывается на события жизненного цикла .
    *
    * @param handler Функция-обработчик, получающая объект события с его типом и дополнительными данными.
+   *
    * @returns Объект Subscription для управления подпиской.
    */
   subscribePropertyEvents(handler: (data: IPropertyEvent) => void): any;

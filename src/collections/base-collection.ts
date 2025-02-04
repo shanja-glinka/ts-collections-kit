@@ -1,6 +1,7 @@
 import collect, { Collection as CollectJsCollection } from 'collect.js';
 import { Subject, Subscription } from 'rxjs';
 import { IObservable } from '../contracts/observable.contract';
+import { ICollectionOptions } from '../interfaces/collection-options.interface';
 import { ICollectionEvent } from '../observers/collection-events';
 import { deepClone } from '../utils/clone';
 import { IVisitor } from '../visitors/visitor.contract';
@@ -15,45 +16,69 @@ const BaseCollectionConstructor = collect([]).constructor as {
 
 /**
  * Класс BaseCollection расширяет функциональность коллекции из collect.js,
- * добавляя поддержку паттернов Memento, Observer и Visitor.
+ * добавляя поддержку паттернов Memento, Observer, Visitor и транзакционное
+ * сохранение состояния с генерацией токена (timestamp в мс). Функциональность
+ * создания снапшотов и транзакций может быть включена или отключена через опции.
  */
 export class BaseCollection<T>
   extends BaseCollectionConstructor<T>
   implements ICollection<T>
 {
-  // Индексная сигнатура позволяет добавлять дополнительные свойства,
-  // даже если базовый класс определяет их как функции.
   [key: string]: any;
 
+  /** Опции коллекции (снапшоты и транзакции). По умолчанию отключены. */
+  protected options: ICollectionOptions;
+
   /**
-   * История для паттерна Memento.
+   * Глобальная история снимков коллекции, где каждый снимок имеет свой токен состояния.
    */
-  protected history: T[][] = [];
+  protected history: { token: number; state: T[] }[] = [];
+
+  /**
+   * Флаг, показывающий, что в данный момент выполняется транзакция.
+   */
+  protected transactionActive = false;
+  /**
+   * Токен текущей транзакции (timestamp в мс).
+   */
+  protected transactionToken: number | null = null;
+  /**
+   * Локальная история снимков внутри транзакции.
+   */
+  protected transactionHistory: T[][] = [];
 
   /**
    * Subject для эмита событий коллекции (Observer).
    */
   protected eventsSubject = new Subject<ICollectionEvent<T>>();
-
   /**
    * Здесь будем хранить подписки на события сущностей.
    */
   protected entitySubscriptions: Subscription[] = [];
 
-  constructor(initialItems?: T[]) {
-    super(initialItems || []); // Передаём начальные элементы в конструктор collect.js
+  /**
+   * Конструктор коллекции.
+   * @param initialItems Начальные элементы коллекции.
+   * @param options Опции для включения/выключения снапшотов и транзакций.
+   */
+  constructor(initialItems?: T[], options?: ICollectionOptions) {
+    super(initialItems || []);
+    // Устанавливаем опции по умолчанию: обе функциональности отключены.
+    this.options = {
+      enableSnapshots: false,
+      enableTransactions: false,
+      ...options,
+    };
 
-    // Если передали начальные элементы, подписываемся на события от сущностей,
-    // если они реализуют IObservable и имеют метод getPropertyObservable.
+    // Подписываемся на события от наблюдаемых сущностей
     (initialItems || []).forEach((item) => {
       this.subscribeToItem(item);
     });
   }
 
   /**
-   * Вспомогательный метод для подписки на события наблюдаемой сущности.
-   * Если сущность реализует IObservable и имеет метод getPropertyObservable(),
-   * подписывается на её события и сохраняет подписку.
+   * Подписывается на события наблюдаемой сущности.
+   * Если сущность реализует IObservable, подписывается на её события и сохраняет подписку.
    */
   private subscribeToItem(item: T): void {
     if (
@@ -63,6 +88,10 @@ export class BaseCollection<T>
       const sub = (item as unknown as IObservable)
         .getPropertyObservable()
         .subscribe((eventData) => {
+          // Если транзакция не активна и включены снапшоты, создаём снапшот.
+          if (!this.transactionActive && this.options.enableSnapshots) {
+            this.snapshot();
+          }
           this.eventsSubject.next({
             type: eventData.event,
             payload: { item, change: eventData },
@@ -71,88 +100,190 @@ export class BaseCollection<T>
       const sub2 = (item as unknown as IObservable)
         .getEntityObservable()
         .subscribe((eventData) => {
-          if (eventData.event == 'updating') {
+          if (
+            eventData.event === 'updating' &&
+            !this.transactionActive &&
+            this.options.enableSnapshots
+          ) {
             this.snapshot();
           }
         });
       this.entitySubscriptions.push(sub);
+      this.entitySubscriptions.push(sub2);
     }
   }
 
   /**
-   * Возвращает все элементы коллекции (аналог метода all() из collect.js).
+   * Возвращает все элементы коллекции.
    */
   public getItems(): T[] {
     return this.all();
   }
 
   /**
-   * Создаёт снимок текущего состояния коллекции с помощью deepClone.
+   * Создает снапшот текущего состояния коллекции.
+   * Если транзакция активна, сохраняет изменения в transactionHistory,
+   * иначе – в глобальной истории с токеном, равным текущему времени.
    */
   protected snapshot(): void {
-    this.history.push(deepClone(this.all()));
+    // Если функциональность снапшотов отключена – ничего не делаем.
+    if (!this.options.enableSnapshots) {
+      return;
+    }
+    const currentState = deepClone(this.all());
+    if (this.transactionActive) {
+      this.transactionHistory.push(currentState);
+    } else {
+      const token = Date.now();
+      this.history.push({ token, state: currentState });
+    }
   }
 
   /**
-   * Создаёт снимок текущего состояния коллекции с помощью deepClone.
+   * Очищает глобальную историю снапшотов.
    */
   protected resetSnapshot(): void {
     this.history = [];
   }
 
   /**
-   * Добавляет элемент в коллекцию, сохраняя предыдущее состояние (Memento)
-   * и эмитируя событие 'add'.
+   * Начинает транзакцию изменений коллекции.
+   * Фиксирует начальное состояние и генерирует токен (timestamp).
    *
-   * Если добавляемая сущность реализует IObservable (то есть имеет метод getPropertyObservable),
-   * происходит подписка на её изменения.
+   * @returns Токен транзакции.
+   * @throws Error если транзакции отключены или уже активна.
+   */
+  public beginTransaction(): number {
+    if (!this.options.enableTransactions) {
+      throw new Error('Транзакции отключены в настройках коллекции.');
+    }
+    if (this.transactionActive) {
+      throw new Error('Транзакция уже активна');
+    }
+    this.transactionActive = true;
+    this.transactionToken = Date.now();
+    // Фиксируем начальное состояние
+    if (this.options.enableSnapshots) {
+      this.transactionHistory = [deepClone(this.all())];
+    }
+    return this.transactionToken;
+  }
+
+  /**
+   * Завершает транзакцию, фиксируя итоговое состояние коллекции вместе с токеном.
+   * Эмитирует событие 'commit' с итоговым состоянием и токеном транзакции.
+   *
+   * @returns Токен завершенной транзакции.
+   * @throws Error если транзакции отключены или не активна.
+   */
+  public commitTransaction(): number {
+    if (!this.options.enableTransactions) {
+      throw new Error('Транзакции отключены в настройках коллекции.');
+    }
+    if (!this.transactionActive) {
+      throw new Error('Нет активной транзакции для фиксации');
+    }
+    const token = this.transactionToken!;
+    const finalState = deepClone(this.all());
+    if (this.options.enableSnapshots) {
+      this.history.push({ token, state: finalState });
+    }
+    this.transactionActive = false;
+    this.transactionToken = null;
+    this.transactionHistory = [];
+    this.eventsSubject.next({
+      type: 'commit',
+      payload: { state: this.all(), token },
+    });
+    return token;
+  }
+
+  /**
+   * Откатывает коллекцию до состояния, зафиксированного в начале транзакции.
+   * Эмитирует событие 'rollback' с восстановленным состоянием.
+   *
+   * @throws Error если транзакции отключены или не активна.
+   */
+  public rollbackTransaction(): void {
+    if (!this.options.enableTransactions) {
+      throw new Error('Транзакции отключены в настройках коллекции.');
+    }
+    if (!this.transactionActive) {
+      throw new Error('Нет активной транзакции для отката');
+    }
+    // Восстанавливаем первоначальное состояние транзакции
+    if (this.options.enableSnapshots && this.transactionHistory.length) {
+      const initialState = this.transactionHistory[0];
+      (this as any).items = initialState;
+    }
+    this.transactionActive = false;
+    this.transactionToken = null;
+    this.transactionHistory = [];
+    this.eventsSubject.next({ type: 'rollback', payload: this.all() });
+  }
+
+  /**
+   * Добавляет элемент в коллекцию.
+   * Если транзакция не активна и включены снапшоты, фиксирует текущее состояние (Memento).
+   * Эмитирует событие 'add' и подписывается на изменения сущности, если она наблюдаемая.
+   *
+   * @param item Элемент для добавления.
    */
   public add(item: T): void {
-    this.snapshot();
-    this.push(item); // push наследуется от collect.js
+    if (!this.transactionActive && this.options.enableSnapshots) {
+      this.snapshot();
+    }
+    this.push(item);
     this.eventsSubject.next({ type: 'add', payload: item });
-
-    // Подписываемся на события сущности, если она наблюдаемая.
     this.subscribeToItem(item);
   }
 
   /**
-   * Удаляет элемент из коллекции, сохраняет снимок и эмитирует событие 'remove'.
+   * Удаляет элемент из коллекции.
+   * Фиксирует состояние перед удалением (если транзакция не активна и включены снапшоты)
+   * и эмитирует событие 'remove'.
+   *
+   * @param item Элемент для удаления.
    */
   public remove(item: T): void {
-    this.snapshot();
+    if (!this.transactionActive && this.options.enableSnapshots) {
+      this.snapshot();
+    }
     const filtered = this.all().filter((i) => i !== item);
-
     (this as any).items = filtered;
     this.eventsSubject.next({ type: 'remove', payload: item });
   }
 
   /**
-   * Фиксирует изменения коллекции, очищая историю снимков, и эмитирует событие 'commit'.
-   * Здесь также обновляем внутреннее состояние, если необходимо.
+   * Фиксирует изменения коллекции вне транзакции, очищая историю снапшотов,
+   * и эмитирует событие 'commit'.
    */
   public commit(): void {
-    this.resetSnapshot();
-
-    (this as any).items = this.all();
-    this.eventsSubject.next({ type: 'commit', payload: this.all() });
+    if (this.transactionActive) {
+      this.commitTransaction();
+    } else {
+      this.resetSnapshot();
+      (this as any).items = this.all();
+      this.eventsSubject.next({ type: 'commit', payload: this.all() });
+    }
   }
 
   /**
-   * Откатывает последнее изменение коллекции, восстанавливая состояние из истории,
+   * Откатывает последнее изменение коллекции (вне транзакции), восстанавливая состояние из истории,
    * и эмитирует событие 'rollback'.
    */
   public rollback(): void {
     if (this.history.length) {
       const lastSnapshot = this.history.pop()!;
-
-      (this as any).items = lastSnapshot;
+      (this as any).items = lastSnapshot.state;
       this.eventsSubject.next({ type: 'rollback', payload: this.all() });
     }
   }
 
   /**
    * Применяет Visitor ко всем элементам коллекции.
+   *
+   * @param visitor Посетитель, который будет применен ко всем элементам.
    */
   public accept(visitor: IVisitor<T>): void {
     this.all().forEach((item) => visitor.visit(item));
@@ -160,6 +291,9 @@ export class BaseCollection<T>
 
   /**
    * Подписывается на события коллекции.
+   *
+   * @param callback Функция, вызываемая при наступлении события.
+   * @returns Subscription для управления подпиской.
    */
   public subscribe(
     callback: (event: ICollectionEvent<T>) => void,
@@ -168,33 +302,58 @@ export class BaseCollection<T>
   }
 
   /**
-   * Переопределяем метод map, чтобы возвращать экземпляр BaseCollection<U>.
-   * Сигнатура: map<T>(fn: (item: Item, index: any) => T): Collection<T>;
+   * Переопределенный метод map, чтобы возвращать экземпляр BaseCollection<U>.
+   * Оборачивает операцию в транзакцию: фиксируем состояние до и после трансформации,
+   * если транзакции включены.
+   *
+   * @param callback Функция трансформации.
+   * @returns Новая коллекция с результатом map.
    */
   public override map<U>(
     callback: (item: T, index: any) => U,
   ): BaseCollection<U> {
+    let token = 0;
+    if (this.options.enableTransactions) {
+      token = this.beginTransaction();
+    }
     const mapped = super.map(callback) as CollectJsCollection<U>;
-    return new BaseCollection<U>(mapped.all());
+    const newCollection = new BaseCollection<U>(mapped.all(), this.options);
+    if (this.options.enableTransactions) {
+      this.commitTransaction();
+      newCollection.history.push({ token, state: newCollection.all() });
+    }
+    return newCollection;
   }
 
   /**
-   * Переопределяем метод filter, чтобы возвращать экземпляр BaseCollection<T>.
+   * Переопределенный метод filter, чтобы возвращать экземпляр BaseCollection<T>.
+   * Фиксирует изменения через транзакцию, если транзакции включены.
+   *
+   * @param fn Функция фильтрации.
+   * @returns Новая коллекция с отфильтрованными элементами.
    */
-  public override filter(fn: (item: T) => boolean): BaseCollection<T>;
-  public override filter(
-    fn: (item: T, key?: any) => boolean,
-  ): BaseCollection<T>;
   public override filter(
     fn: (item: T, key?: any) => boolean,
   ): BaseCollection<T> {
+    let token = 0;
+    if (this.options.enableTransactions) {
+      token = this.beginTransaction();
+    }
     const filtered = super.filter(fn) as CollectJsCollection<T>;
-    return new BaseCollection<T>(filtered.all());
+    const newCollection = new BaseCollection<T>(filtered.all(), this.options);
+    if (this.options.enableTransactions) {
+      this.commitTransaction();
+      newCollection.history.push({ token, state: newCollection.all() });
+    }
+    return newCollection;
   }
 
   /**
-   * Переопределяем метод reduce, чтобы привести его к ожидаемой сигнатуре:
-   * reduce<T>(fn: (_carry: T | null, item: Item) => T, carry?: T): any;
+   * Переопределенный метод reduce, приводя его к ожидаемой сигнатуре.
+   *
+   * @param callback Функция редукции.
+   * @param initial Начальное значение.
+   * @returns Результат редукции.
    */
   public override reduce<U>(
     callback: (carry: U | null, item: T, key?: any) => U,

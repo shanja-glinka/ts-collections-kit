@@ -1,10 +1,5 @@
 import { BaseEntity } from '../../entities/base-entity';
-import {
-  IFileType,
-  INotification,
-  NotificationServiceEnum,
-  NotificationTypeEnum,
-} from '../../interfaces/notification.interface';
+import { INotification } from './notification.interface';
 
 /**
  * Класс уведомления.
@@ -14,36 +9,6 @@ import {
  * функциональность эмита событий жизненного цикла.
  */
 export class Notification extends BaseEntity implements INotification {
-  /**
-   * ID пользователя, которому адресовано уведомление.
-   */
-  userId: string;
-
-  /**
-   * ID автора, инициировавшего уведомление. Может быть null, если инициатор отсутствует.
-   */
-  authorId: string | null;
-
-  /**
-   * ID поста, инициировавшего уведомление. Может быть null, если пост не связан.
-   */
-  postId: string | null;
-
-  /**
-   * Тип уведомления: "message", "remind" или "hot".
-   */
-  type: NotificationTypeEnum;
-
-  /**
-   * Тип сервиса уведомления. В данный момент всегда "path".
-   */
-  service: NotificationServiceEnum;
-
-  /**
-   * Изображение, ассоциированное с уведомлением. Может быть null, если изображение отсутствует.
-   */
-  image: IFileType | null;
-
   /**
    * Текст уведомления в формате HTML.
    */
@@ -58,22 +23,4 @@ export class Notification extends BaseEntity implements INotification {
    * Относительная ссылка для перехода по клику на уведомление. Может быть null, если ссылка отсутствует.
    */
   link: string | null;
-
-  /**
-   * Пример метода, демонстрирующего выполнение какой-либо логики.
-   *
-   * @returns Строку с сообщением.
-   */
-  public doSomething(): string {
-    return 'it did!';
-  }
-
-  /**
-   * Ещё один пример метода.
-   *
-   * @returns Строку с другим сообщением.
-   */
-  public doSomethingMore2(): string {
-    return 'it did2!';
-  }
 }

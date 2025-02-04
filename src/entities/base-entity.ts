@@ -11,7 +11,6 @@ import {
   IPropertyEvent,
   IPropertyEventPayload,
 } from '../observers/observable.interface';
-import { SoftDeletableEntity } from './soft-deletable-entity';
 
 /**
  * Базовый класс для сущностей.
@@ -22,11 +21,11 @@ import { SoftDeletableEntity } from './soft-deletable-entity';
  * Теперь изменения свойств перехватываются через Proxy – не нужно вручную создавать аксессоры для каждого поля.
  */
 export class BaseEntity
-  extends SoftDeletableEntity
   implements IBaseEntity, IBaseTransformEntityContract, IObservable
 {
   // Можно объявлять свойства как обычно.
   // Если требуется, чтобы они автоматически отслеживались, Proxy перехватит их запись.
+  public id!: string;
   public createdAt!: Date;
   public updatedAt!: Date;
   public createdBy!: string;
@@ -65,6 +64,7 @@ export class BaseEntity
    * Подписывается на события жизненного цикла сущности.
    *
    * @param handler Функция-обработчик, получающая объект события с его типом и дополнительными данными.
+   *
    * @returns Объект Subscription для управления подпиской.
    */
   public subscribeEntityEvents(handler: (data: IObservableEvent) => void) {
@@ -75,6 +75,7 @@ export class BaseEntity
    * Подписывается на события жизненного цикла .
    *
    * @param handler Функция-обработчик, получающая объект события с его типом и дополнительными данными.
+   *
    * @returns Объект Subscription для управления подпиской.
    */
   public subscribePropertyEvents(handler: (data: IPropertyEvent) => void) {
@@ -91,7 +92,6 @@ export class BaseEntity
    * 4. Эмитируется событие "после обновления" (EntityEvent.Updated)
    */
   constructor(...args: any[]) {
-    super();
     return new Proxy(this, {
       set: (target, property, value, receiver) => {
         // Не обрабатываем специальные свойства и символы.
@@ -128,7 +128,9 @@ export class BaseEntity
    * Если валидация не проходит, выбрасывается ошибка с подробным описанием.
    *
    * @param plain Объект для преобразования.
+   *
    * @returns Преобразованный и валидированный экземпляр класса.
+   *
    * @throws Error, если возникли ошибки валидации.
    */
   static async plainToInstance<T extends BaseEntity>(
@@ -153,6 +155,7 @@ export class BaseEntity
    * Форматирует ошибки валидации в читаемую строку.
    *
    * @param errors Массив ошибок валидации.
+   *
    * @returns Строка с описанием ошибок.
    */
   private static formatValidationErrors(errors: ValidationError[]): string {
@@ -170,6 +173,7 @@ export class BaseEntity
    * Эмитирует событие жизненного цикла сущности.
    *
    * @param event Тип события (например, creating, updated и т.д.).
+   *
    * @param payload Дополнительные данные, связанные с событием.
    */
   protected emitEntityEvent(event: EntityEvent, payload?: any): void {
@@ -180,6 +184,7 @@ export class BaseEntity
    * Эмитирует событие жизненного цикла свойства.
    *
    * @param event Тип события (например, creating, updated и т.д.).
+   *
    * @param payload Дополнительные данные, связанные с событием.
    */
   protected emitPropertyEvent(

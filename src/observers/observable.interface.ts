@@ -1,30 +1,48 @@
 /**
  * Перечисление событий жизненного цикла сущности.
+ * Определяет ключевые моменты создания, обновления, удаления, сохранения и восстановления сущности.
  */
 export enum EntityEvent {
-  Creating = 'creating',
-  Created = 'created',
-  Updating = 'updating',
-  Updated = 'updated',
-  Deleting = 'deleting',
-  Deleted = 'deleted',
-  Saving = 'saving',
-  Saved = 'saved',
-  Restoring = 'restoring',
-  Restored = 'restored',
+  Creating = 'creating', // Событие до создания сущности.
+  Created = 'created', // Событие после успешного создания сущности.
+  Updating = 'updating', // Событие до обновления сущности.
+  Updated = 'updated', // Событие после успешного обновления сущности.
+  Deleting = 'deleting', // Событие до удаления сущности.
+  Deleted = 'deleted', // Событие после успешного удаления сущности.
+  Saving = 'saving', // Событие до сохранения сущности.
+  Saved = 'saved', // Событие после успешного сохранения сущности.
+  Restoring = 'restoring', // Событие до восстановления сущности.
+  Restored = 'restored', // Событие после успешного восстановления сущности.
 }
 
+/**
+ * Интерфейс полезной нагрузки для событий, связанных с изменением конкретного свойства сущности.
+ */
 export interface IPropertyEventPayload {
+  /** Название изменяемого свойства. */
   property: string;
+  /** Старое значение свойства до изменения. */
   oldValue: any;
+  /** Новое значение свойства после изменения. */
   newValue: any;
 }
 
+/**
+ * Интерфейс события, наблюдаемого для сущности.
+ * Содержит тип события (из EntityEvent) и дополнительную полезную нагрузку (payload).
+ */
 export interface IObservableEvent {
+  /** Тип события, соответствующий этапу жизненного цикла сущности. */
   event: EntityEvent;
+  /** Дополнительные данные, связанные с событием. */
   payload?: any;
 }
 
+/**
+ * Интерфейс события изменения конкретного свойства.
+ * Наследует общий интерфейс IObservableEvent и уточняет payload как IPropertyEventPayload.
+ */
 export interface IPropertyEvent extends IObservableEvent {
+  /** Полезная нагрузка события, содержащая информацию об изменении свойства. */
   payload: IPropertyEventPayload;
 }
