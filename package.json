@@ -1,5 +1,5 @@
 {
-  "name": "@shanja-glinka/ts-collections",
+  "name": "@shanja-glinka/ts-collections-kit",
   "version": "0.0.1",
   "main": "dist/cjs/main.cjs",
   "module": "dist/esm/main.js",
