@@ -16,4 +16,4 @@ export * as ObserverTypes from './observers/observer-types';
 
 export * as Utils from './utils/clone';
 
-export * as VisitorContract from './visitors/visitor.contract';
+export * as VisitorContract from './contracts/visitor.contract';

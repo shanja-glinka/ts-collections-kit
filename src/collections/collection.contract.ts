@@ -1,6 +1,6 @@
 import { Collection as CollectJsCollection } from 'collect.js';
 import { ICollectionEvent } from '../observers/collection-events';
-import { IVisitor } from '../visitors/visitor.contract';
+import { IVisitor } from '../contracts/visitor.contract';
 
 /**
  * Интерфейс коллекции, расширяющий базовую коллекцию collect.js,

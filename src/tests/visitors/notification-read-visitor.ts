@@ -1,4 +1,4 @@
-import { IVisitor } from '../../visitors/visitor.contract';
+import { IVisitor } from '../../contracts/visitor.contract';
 import { Notification } from '../entities/notification.entity';
 
 /**

@@ -4,7 +4,7 @@ import { IObservable } from '../contracts/observable.contract';
 import { ICollectionOptions } from '../interfaces/collection-options.interface';
 import { ICollectionEvent } from '../observers/collection-events';
 import { deepClone } from '../utils/clone';
-import { IVisitor } from '../visitors/visitor.contract';
+import { IVisitor } from '../contracts/visitor.contract';
 import { ICollection } from './collection.contract';
 
 /**
