@@ -1,6 +1,6 @@
 import { Collection as CollectJsCollection } from 'collect.js';
-import { ICollectionEvent } from '../observers/collection-events';
 import { IVisitor } from '../contracts/visitor.contract';
+import { CollectionEvent } from '../observers/collection-events';
 
 /**
  * Интерфейс коллекции, расширяющий базовую коллекцию collect.js,
@@ -8,7 +8,6 @@ import { IVisitor } from '../contracts/visitor.contract';
  */
 export interface ICollection<T>
   extends Omit<CollectJsCollection<T>, 'map' | 'filter' | 'reduce'> {
-  // Наши версии методов:
   map<U>(callback: (item: T, index: any) => U): ICollection<U>;
   // Для filter задаём перегрузки, как в collect.js:
   filter(fn: (item: T) => boolean): ICollection<T>;
@@ -34,7 +33,7 @@ export interface ICollection<T>
    * Подписывается на события коллекции.
    * Принимает callback, получающий объект события.
    */
-  subscribe(callback: (event: ICollectionEvent<T>) => void): void;
+  subscribe(callback: (event: CollectionEvent<T>) => void): void;
   /** Возвращает все элементы коллекции */
   getItems(): T[];
 

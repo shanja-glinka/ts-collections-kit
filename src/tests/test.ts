@@ -53,13 +53,13 @@ const emittedEvents: Array<{ type: string; payload?: any }> = [];
 
 // Подписываемся на события коллекции
 const subscription = notificationsCollection.subscribe((event) => {
-  const payload = event.payload as { item: Notification; change: any };
-  // @ts-ignore
-  console.log(
-    `Событие коллекции: ${event.type}`,
-    typeof payload?.change === 'undefined' ? '{...}' : payload.change,
-  );
-  emittedEvents.push(event);
+  if (event.type === 'updated') {
+    // @ts-ignore
+    console.log(`Событие коллекции: ${event.type}`, event.payload.change);
+    emittedEvents.push(event);
+  } else {
+    console.log(`Событие коллекции: ${event.type}`, '{...}');
+  }
 });
 
 // Выводим исходное состояние уведомлений
@@ -78,6 +78,10 @@ console.log(
 notificationsCollection.getItems().forEach((n) => {
   console.log(`Notification (id: ${n.id}) - isRead: ${n.isRead}`);
 });
+
+console.log(`\nИзменим уведомление с id "5". Ждем эмиты.`);
+notificationsCollection.getItems()[5].isRead = false;
+notificationsCollection.getItems()[5].isRead = true;
 
 console.log(`
 // ===================================================================

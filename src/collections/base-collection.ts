@@ -1,10 +1,10 @@
 import collect, { Collection as CollectJsCollection } from 'collect.js';
 import { Subject, Subscription } from 'rxjs';
 import { IObservable } from '../contracts/observable.contract';
-import { ICollectionOptions } from '../interfaces/collection-options.interface';
-import { ICollectionEvent } from '../observers/collection-events';
-import { deepClone } from '../utils/clone';
 import { IVisitor } from '../contracts/visitor.contract';
+import { ICollectionOptions } from '../interfaces/collection-options.interface';
+import { CollectionEvent } from '../observers/collection-events';
+import { deepClone } from '../utils/clone';
 import { ICollection } from './collection.contract';
 
 /**
@@ -50,7 +50,7 @@ export class BaseCollection<T>
   /**
    * Subject для эмита событий коллекции (Observer).
    */
-  protected eventsSubject = new Subject<ICollectionEvent<T>>();
+  protected eventsSubject = new Subject<CollectionEvent<T>>();
   /**
    * Здесь будем хранить подписки на события сущностей.
    */
@@ -264,7 +264,10 @@ export class BaseCollection<T>
     } else {
       this.resetSnapshot();
       (this as any).items = this.all();
-      this.eventsSubject.next({ type: 'commit', payload: this.all() });
+      this.eventsSubject.next({
+        type: 'commit',
+        payload: { state: this.all(), token: undefined },
+      });
     }
   }
 
@@ -296,7 +299,7 @@ export class BaseCollection<T>
    * @returns Subscription для управления подпиской.
    */
   public subscribe(
-    callback: (event: ICollectionEvent<T>) => void,
+    callback: (event: CollectionEvent<T>) => void,
   ): Subscription {
     return this.eventsSubject.subscribe(callback);
   }

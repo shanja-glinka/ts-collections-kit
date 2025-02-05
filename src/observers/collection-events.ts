@@ -1,3 +1,5 @@
+import { EntityEventType } from './observable.interface';
+
 /**
  * Перечисление (типы) событий коллекции.
  * Возможные типы событий: добавление элемента, удаление элемента,
@@ -25,3 +27,11 @@ export interface ICollectionEvent<T> {
   type: CollectionEventType;
   payload?: T | T[] | { item: T; change: any } | { state: T[]; token: any };
 }
+
+export type CollectionEvent<T> =
+  | { type: 'add'; payload: T }
+  | { type: 'remove'; payload: T }
+  | { type: 'commit'; payload: { state: T[]; token: any } }
+  | { type: 'rollback'; payload: T[] }
+  | { type: 'updated'; payload: { item: T; change: any } }
+  | { type: EntityEventType; payload: { item: T; change: any } };

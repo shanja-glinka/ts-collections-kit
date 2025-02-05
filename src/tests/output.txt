@@ -10,16 +10,16 @@ Notification id: 10
 === Тестирование базовой коллекции (опции отключены) ===
 
 Исходное состояние уведомлений:
-Notification (user: user1) - isRead: false
-Notification (user: user2) - isRead: false
-Notification (user: user3) - isRead: false
-Notification (user: user4) - isRead: false
-Notification (user: user5) - isRead: false
-Notification (user: user6) - isRead: false
-Notification (user: user7) - isRead: false
-Notification (user: user8) - isRead: false
-Notification (user: user9) - isRead: false
-Notification (user: user10) - isRead: false
+Notification (id: 1) - isRead: false
+Notification (id: 2) - isRead: false
+Notification (id: 3) - isRead: false
+Notification (id: 4) - isRead: false
+Notification (id: 5) - isRead: false
+Notification (id: 6) - isRead: false
+Notification (id: 7) - isRead: false
+Notification (id: 8) - isRead: false
+Notification (id: 9) - isRead: false
+Notification (id: 10) - isRead: false
 Событие коллекции: updated {
   event: 'updated',
   payload: { property: 'isRead', oldValue: false, newValue: true }
@@ -65,23 +65,33 @@ Notification (user: user10) - isRead: false
 ----Специальное событие сущности: updated { property: 'isRead', oldValue: false, newValue: true }
 
 Состояние уведомлений после применения NotificationReadVisitor:
-Notification (user: user1) - isRead: true
-Notification (user: user2) - isRead: true
-Notification (user: user3) - isRead: true
-Notification (user: user4) - isRead: true
-Notification (user: user5) - isRead: true
-Notification (user: user6) - isRead: true
-Notification (user: user7) - isRead: true
-Notification (user: user8) - isRead: true
-Notification (user: user9) - isRead: true
-Notification (user: user10) - isRead: true
+Notification (id: 1) - isRead: true
+Notification (id: 2) - isRead: true
+Notification (id: 3) - isRead: true
+Notification (id: 4) - isRead: true
+Notification (id: 5) - isRead: true
+Notification (id: 6) - isRead: true
+Notification (id: 7) - isRead: true
+Notification (id: 8) - isRead: true
+Notification (id: 9) - isRead: true
+Notification (id: 10) - isRead: true
+
+Изменим уведомление с id "5". Ждем эмиты.
+Событие коллекции: updated {
+  event: 'updated',
+  payload: { property: 'isRead', oldValue: true, newValue: false }
+}
+Событие коллекции: updated {
+  event: 'updated',
+  payload: { property: 'isRead', oldValue: false, newValue: true }
+}
 
 // ===================================================================
 // 2. Тестирование удаления уведомления
 // ===================================================================
 
 
-Удалим уведомление с id "5" (user5)
+Удалим уведомление с id "5"
 Событие коллекции: remove {...}
 -> Количество уведомлений после удаления: 9
 Уведомление с id 5 удалено.
@@ -129,12 +139,12 @@ Notification (user: user10) - isRead: true
 
 === Тестирование коллекции с включенными опциями (snapshots & transactions) ===
 Добавили уведомление, коллекция имеет 11 элементов.
-Транзакция начата, токен: 1738675186806
+Транзакция начата, токен: 1738744331941
 В транзакции: изменили isRead первого уведомления на false.
-Транзакция завершена, токен: 1738675186806
-Новая транзакция начата, токен: 1738675186812
+Транзакция завершена, токен: 1738744331941
+Новая транзакция начата, токен: 1738744331950
 
-Удалим уведомление с id "5" (user5)
+Удалим уведомление с id "5"
 -> Количество уведомлений после удаления: 11
 Уведомление с id 5 удалено.
 -> Количество уведомлений: 11
