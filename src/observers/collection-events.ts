@@ -8,7 +8,7 @@ export type CollectionEventType =
   | 'remove'
   | 'commit'
   | 'rollback'
-  | 'entity-change';
+  | 'updated';
 
 /**
  * Интерфейс события коллекции.
