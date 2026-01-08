@@ -1,94 +1,116 @@
 /**
- * Интерфейс-адаптер для работы с репозиторием (например, typeorm).
+ * Repository adapter contract.
+ *
+ * This interface abstracts persistence operations (e.g. TypeORM/Prisma/custom implementations)
+ * so domain code can depend on a stable, strongly-typed contract.
+ *
+ * @template TEntity - Entity type.
+ * @template TWhere - Query/filter type.
+ * @template TCreateDto - Create DTO type.
+ * @template TTransactionManager - Transaction manager type.
  */
-export interface IRepositoryAdapter<T> {
+export interface IRepositoryAdapter<
+  TEntity,
+  TWhere = unknown,
+  TCreateDto = unknown,
+  TTransactionManager = unknown,
+> {
   /**
-   * Находит одну запись по заданным условиям.
+   * Finds a single entity by conditions.
    *
-   * @param {any} where - Условия для поиска.
-   * @param {boolean} [throwOnEmpty] - Если true, выбрасывает исключение, если сущность не найдена.
-   * @param {any} [transactionManager] - Опциональный менеджер транзакций.
+   * @param {TWhere} where - Search conditions.
+   * @param {boolean | undefined} throwOnEmpty - If true, implementation should throw when nothing is found.
+   * @param {TTransactionManager | undefined} transactionManager - Optional transaction manager.
    *
-   * @returns {Promise<T | null>} - Найденная сущность или null.
+   * @returns {Promise<TEntity | null>} Found entity or `null`.
    */
   findOne(
-    where: any,
+    where: TWhere,
     throwOnEmpty?: boolean,
-    transactionManager?: any,
-  ): Promise<T | null>;
+    transactionManager?: TTransactionManager,
+  ): Promise<TEntity | null>;
 
   /**
-   * Создаёт новую запись.
+   * Creates a new entity.
    *
-   * @param {any} createDto - Данные для создания записи.
-   * @param {any} [transactionManager] - Опциональный менеджер транзакций.
+   * @param {TCreateDto} createDto - Create DTO.
+   * @param {TTransactionManager | undefined} transactionManager - Optional transaction manager.
    *
-   * @returns {Promise<T>} - Созданная сущность.
+   * @returns {Promise<TEntity>} Created entity.
    */
-  create(createDto: any, transactionManager?: any): Promise<T>;
+  create(
+    createDto: TCreateDto,
+    transactionManager?: TTransactionManager,
+  ): Promise<TEntity>;
 
   /**
-   * Обновляет существующую запись.
+   * Updates an existing entity.
    *
-   * @param {string|T} entity - Идентификатор записи или Сущность T.
-   * @param {Partial<T>} updateDto - Данные для обновления.
-   * @param {any} [transactionManager] - Опциональный менеджер транзакций.
+   * @param {string | TEntity} entity - Entity id or entity instance.
+   * @param {Partial<TEntity>} updateDto - Partial update DTO.
+   * @param {TTransactionManager | undefined} transactionManager - Optional transaction manager.
    *
-   * @returns {Promise<T>} - Обновлённая сущность.
+   * @returns {Promise<TEntity>} Updated entity.
    */
   update(
-    entity: string | T,
-    updateDto: Partial<T>,
-    transactionManager?: any,
-  ): Promise<T>;
+    entity: string | TEntity,
+    updateDto: Partial<TEntity>,
+    transactionManager?: TTransactionManager,
+  ): Promise<TEntity>;
 
   /**
-   * Выполняет мягкое удаление записи.
+   * Soft-deletes an entity by id (if supported).
    *
-   * @param {string} id - Идентификатор сущности.
-   * @param {boolean} [throwOnEmpty] - Выбрасывать ли исключение, если сущность не найдена.
-   * @param {any} [transactionManager] - Опциональный менеджер транзакций.
+   * @param {string} id - Entity id.
+   * @param {boolean | undefined} throwOnEmpty - If true, implementation should throw when nothing is found.
+   * @param {TTransactionManager | undefined} transactionManager - Optional transaction manager.
    *
-   * @returns {Promise<boolean>} - Удалена ли сущность.
+   * @returns {Promise<boolean>} Whether the entity was deleted.
    */
   delete(
     id: string,
     throwOnEmpty?: boolean,
-    transactionManager?: any,
+    transactionManager?: TTransactionManager,
   ): Promise<boolean>;
 
   /**
-   * Удаляет сущность (мягкое удаление, если поддерживается).
+   * Removes an entity (soft delete if supported by the implementation).
    *
-   * @param {T} entity - Сущность для удаления.
-   * @param {any} [transactionManager] - Опциональный менеджер транзакций.
+   * @param {TEntity} entity - Entity instance.
+   * @param {TTransactionManager | undefined} transactionManager - Optional transaction manager.
    *
-   * @returns {Promise<boolean>} - Удалена ли сущность.
+   * @returns {Promise<boolean>} Whether the entity was removed.
    */
-  remove(entity: T, transactionManager?: any): Promise<boolean>;
+  remove(
+    entity: TEntity,
+    transactionManager?: TTransactionManager,
+  ): Promise<boolean>;
 
   /**
-   * Полное удаление сущности (без возможности восстановления).
+   * Permanently deletes an entity by id.
    *
-   * @param {string} id - Идентификатор сущности.
-   * @param {boolean} [throwOnEmpty] - Выбрасывать ли исключение, если сущность не найдена.
-   * @param {any} [transactionManager] - Опциональный менеджер транзакций.
+   * @param {string} id - Entity id.
+   * @param {boolean | undefined} throwOnEmpty - If true, implementation should throw when nothing is found.
+   * @param {TTransactionManager | undefined} transactionManager - Optional transaction manager.
    *
-   * @returns {Promise<boolean>} - Удалена ли сущность.
+   * @returns {Promise<boolean>} Whether the entity was deleted.
    */
   permanentDelete(
     id: string,
     throwOnEmpty?: boolean,
-    transactionManager?: any,
+    transactionManager?: TTransactionManager,
   ): Promise<boolean>;
 
   /**
-   * Полное удаление сущности (без восстановления).
+   * Permanently removes an entity instance.
    *
-   * @param {T} entity - Сущность для удаления.
-   * @param {any} [transactionManager] - Опциональный менеджер транзакций.
+   * @param {TEntity} entity - Entity instance.
+   * @param {TTransactionManager | undefined} transactionManager - Optional transaction manager.
    *
-   * @returns {Promise<boolean>} - Удалена ли сущность.
+   * @returns {Promise<boolean>} Whether the entity was removed.
    */
-  permanentRemove(entity: T, transactionManager?: any): Promise<boolean>;
+  permanentRemove(
+    entity: TEntity,
+    transactionManager?: TTransactionManager,
+  ): Promise<boolean>;
 }

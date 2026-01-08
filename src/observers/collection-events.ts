@@ -1,37 +1,60 @@
-import { EntityEventType } from './observable.interface';
+import { EntityEvent, IPropertyEventPayload } from './observable.interface';
 
 /**
- * Перечисление (типы) событий коллекции.
- * Возможные типы событий: добавление элемента, удаление элемента,
- * фиксация изменений (commit), откат изменений (rollback) и изменение сущности.
+ * Collection event types.
+ *
+ * This is the set of events emitted by `BaseCollection`.
  */
 export type CollectionEventType =
   | 'add'
   | 'remove'
   | 'commit'
   | 'rollback'
-  | 'updated';
+  | EntityEvent;
 
 /**
- * Интерфейс события коллекции.
+ * Payload for a collection commit event.
  *
- * @template T Тип элементов коллекции.
- *
- * Свойство type указывает на тип события, а payload может содержать:
- * - отдельный элемент T (например, при добавлении или удалении);
- * - массив элементов T (например, при commit);
- * - объект с элементом и информацией об изменении (при изменении сущности);
- * - объект с состоянием коллекции и токеном транзакции.
+ * @template T - Collection item type.
  */
-export interface ICollectionEvent<T> {
-  type: CollectionEventType;
-  payload?: T | T[] | { item: T; change: any } | { state: T[]; token: any };
+export interface ICollectionCommitPayload<T> {
+  /**
+   * Current collection state at commit time.
+   *
+   * Note: the array is read-only to discourage accidental mutation of snapshots.
+   */
+  state: readonly T[];
+  /** Optional transaction token if the commit happened inside a transaction. */
+  token?: number;
 }
 
+/**
+ * Payload for an entity-related collection event.
+ *
+ * @template T - Collection item type.
+ */
+export interface ICollectionEntityChangePayload<T> {
+  /** The entity that emitted the event. */
+  item: T;
+  /** Property change details emitted by the entity. */
+  change: IPropertyEventPayload;
+}
+
+/**
+ * Discriminated union for collection events.
+ *
+ * @template T - Collection item type.
+ */
 export type CollectionEvent<T> =
   | { type: 'add'; payload: T }
   | { type: 'remove'; payload: T }
-  | { type: 'commit'; payload: { state: T[]; token: any } }
-  | { type: 'rollback'; payload: T[] }
-  | { type: 'updated'; payload: { item: T; change: any } }
-  | { type: EntityEventType; payload: { item: T; change: any } };
+  | { type: 'commit'; payload: ICollectionCommitPayload<T> }
+  | { type: 'rollback'; payload: readonly T[] }
+  | { type: EntityEvent; payload: ICollectionEntityChangePayload<T> };
+
+/**
+ * Backwards-compatible alias for the collection event union.
+ *
+ * @template T - Collection item type.
+ */
+export type ICollectionEvent<T> = CollectionEvent<T>;

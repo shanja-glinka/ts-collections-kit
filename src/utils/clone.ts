@@ -1,12 +1,14 @@
-import { cloneDeep } from 'lodash';
+import lodash from 'lodash';
 
 /**
- * Функция для глубокого клонирования объекта.
- * Использует функцию cloneDeep из библиотеки lodash.
+ * Deep-clone a value.
  *
- * @param value Объект, который требуется клонировать.
- * @returns Глубокая копия переданного объекта.
+ * This is a small wrapper around `lodash/cloneDeep` to keep the dependency usage centralized.
+ *
+ * @template T
+ * @param {T} value - Value to clone.
+ * @returns {T} Deep clone of the input value.
  */
 export function deepClone<T>(value: T): T {
-  return cloneDeep(value);
+  return lodash.cloneDeep(value);
 }

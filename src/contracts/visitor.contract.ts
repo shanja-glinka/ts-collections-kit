@@ -1,11 +1,14 @@
 /**
- * Интерфейс посетителя для реализации паттерна Visitor.
- * Позволяет выполнять операцию над каждым элементом коллекции.
+ * Visitor contract (Visitor pattern).
+ *
+ * @template T - Visited item type.
  */
 export interface IVisitor<T> {
   /**
-   * Метод, который будет вызван для каждого элемента коллекции.
-   * @param item Элемент коллекции, над которым выполняется операция.
+   * Executes an operation for a single item.
+   *
+   * @param {T} item - Collection item to visit.
+   * @returns {void}
    */
   visit(item: T): void;
 }

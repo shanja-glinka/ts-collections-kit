@@ -1,90 +1,103 @@
 import { Observable, Subscription } from 'rxjs';
 import {
-  EntityEvent,
   IObservableEvent,
   IPropertyEvent,
 } from '../observers/observable.interface';
 
+/**
+ * Observable entity contract.
+ *
+ * - `getEntityObservable()` / `subscribeEntityEvents()` for lifecycle events
+ * - `getPropertyObservable()` / `subscribePropertyEvents()` for property change events
+ */
 export interface IObservable {
   /**
-   * Подписывается на события жизненного цикла сущности.
+   * Returns an observable stream of entity lifecycle events.
    *
-   * @param handler Функция-обработчик, принимающая объект с именем события и дополнительными данными.
+   * @returns {Observable<IObservableEvent<unknown>>} Entity lifecycle events stream.
+   */
+  getEntityObservable(): Observable<IObservableEvent<unknown>>;
+
+  /**
+   * Returns an observable stream of property change events.
    *
-   * @returns Объект Subscription для управления подпиской.
+   * @returns {Observable<IPropertyEvent>} Property change events stream.
+   */
+  getPropertyObservable(): Observable<IPropertyEvent>;
+
+  /**
+   * Subscribes to entity lifecycle events.
+   *
+   * @param {(data: IObservableEvent<unknown>) => void} handler - Event handler.
+   * @returns {Subscription} Subscription instance.
    */
   subscribeEntityEvents(
-    handler: (data: { event: EntityEvent; payload?: any }) => void,
-  ): Subscription | any;
+    handler: (data: IObservableEvent<unknown>) => void,
+  ): Subscription;
 
   /**
-   * Возвращает Observable, который эмитит события изменения отдельных свойств сущности.
-   */
-  getEntityObservable(): Observable<{
-    event: EntityEvent;
-    payload?: any;
-  }>;
-
-  /**
-   * Подписывается на события жизненного цикла сущности.
+   * Subscribes to property change events.
    *
-   * @param handler Функция-обработчик, получающая объект события с его типом и дополнительными данными.
-   *
-   * @returns Объект Subscription для управления подпиской.
+   * @param {(data: IPropertyEvent) => void} handler - Event handler.
+   * @returns {Subscription} Subscription instance.
    */
-  subscribeEntityEvents(handler: (data: IObservableEvent) => void): any;
+  subscribePropertyEvents(
+    handler: (data: IPropertyEvent) => void,
+  ): Subscription;
 
   /**
-   * Подписывается на события жизненного цикла .
+   * Explicit lifecycle hook: `creating`.
    *
-   * @param handler Функция-обработчик, получающая объект события с его типом и дополнительными данными.
-   *
-   * @returns Объект Subscription для управления подпиской.
-   */
-  subscribePropertyEvents(handler: (data: IPropertyEvent) => void): any;
-
-  /**
-   * Возвращает Observable, который эмитит события изменения сущности.
-   */
-  getPropertyObservable(): Observable<any>;
-
-  /**
-   * Метод для вызова события создания сущности до сохранения.
+   * @returns {void}
    */
   creating(): void;
 
   /**
-   * Метод для вызова события после успешного создания сущности.
+   * Explicit lifecycle hook: `created`.
+   *
+   * @returns {void}
    */
   created(): void;
 
   /**
-   * Метод для вызова события обновления сущности до сохранения.
+   * Explicit lifecycle hook: `updating`.
+   *
+   * @returns {void}
    */
   updating(): void;
 
   /**
-   * Метод для вызова события после успешного обновления создания сущности.
+   * Explicit lifecycle hook: `updated`.
+   *
+   * @returns {void}
    */
   updated(): void;
 
   /**
-   * Метод для вызова события до удаления сущности.
+   * Explicit lifecycle hook: `deleting`.
+   *
+   * @returns {void}
    */
   deleting(): void;
 
   /**
-   * Метод для вызова события после успешного удаления сущности.
+   * Explicit lifecycle hook: `deleted`.
+   *
+   * @returns {void}
    */
   deleted(): void;
 
   /**
-   * Метод для вызова события до восстановления сущности.
+   * Explicit lifecycle hook: `restoring`.
+   *
+   * @returns {void}
    */
   restoring(): void;
 
   /**
-   * Метод для вызова события после успешного восстановления сущности.
+   * Explicit lifecycle hook: `restored`.
+   *
+   * @returns {void}
    */
   restored(): void;
 }

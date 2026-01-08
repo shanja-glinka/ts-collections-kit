@@ -1,63 +1,77 @@
 /**
- * Перечисление событий жизненного цикла сущности.
- * Определяет ключевые моменты создания, обновления, удаления, сохранения и восстановления сущности.
+ * Entity lifecycle events.
+ *
+ * These events are emitted by `BaseEntity` and can be observed by collections or application code.
  */
 export enum EntityEvent {
-  Creating = 'creating', // Событие до создания сущности.
-  Created = 'created', // Событие после успешного создания сущности.
-  Updating = 'updating', // Событие до обновления сущности.
-  Updated = 'updated', // Событие после успешного обновления сущности.
-  Deleting = 'deleting', // Событие до удаления сущности.
-  Deleted = 'deleted', // Событие после успешного удаления сущности.
-  Saving = 'saving', // Событие до сохранения сущности.
-  Saved = 'saved', // Событие после успешного сохранения сущности.
-  Restoring = 'restoring', // Событие до восстановления сущности.
-  Restored = 'restored', // Событие после успешного восстановления сущности.
+  /** Fired before the entity is created. */
+  Creating = 'creating',
+  /** Fired after the entity is created. */
+  Created = 'created',
+  /** Fired before the entity is updated. */
+  Updating = 'updating',
+  /** Fired after the entity is updated. */
+  Updated = 'updated',
+  /** Fired before the entity is deleted. */
+  Deleting = 'deleting',
+  /** Fired after the entity is deleted. */
+  Deleted = 'deleted',
+  /** Fired before the entity is saved. */
+  Saving = 'saving',
+  /** Fired after the entity is saved. */
+  Saved = 'saved',
+  /** Fired before the entity is restored. */
+  Restoring = 'restoring',
+  /** Fired after the entity is restored. */
+  Restored = 'restored',
 }
+
 /**
- * Перечисление событий жизненного цикла сущности.
- * Определяет ключевые моменты создания, обновления, удаления, сохранения и восстановления сущности.
+ * Entity lifecycle events represented by string literals.
+ *
+ * This is useful when you want a string-union type without depending on the enum.
  */
 export type EntityEventType =
-  | 'creating' // Событие до создания сущности.
-  | 'created' // Событие после успешного создания сущности.
-  | 'updating' // Событие до обновления сущности.
-  | 'updated' // Событие после успешного обновления сущности.
-  | 'deleting' // Событие до удаления сущности.
-  | 'deleted' // Событие после успешного удаления сущности.
-  | 'saving' // Событие до сохранения сущности.
-  | 'saved' // Событие после успешного сохранения сущности.
-  | 'restoring' // Событие до восстановления сущности.
-  | 'restored'; // Событие после успешного восстановления сущности.
+  | 'creating'
+  | 'created'
+  | 'updating'
+  | 'updated'
+  | 'deleting'
+  | 'deleted'
+  | 'saving'
+  | 'saved'
+  | 'restoring'
+  | 'restored';
 
 /**
- * Интерфейс полезной нагрузки для событий, связанных с изменением конкретного свойства сущности.
+ * Payload for a single property change.
  */
 export interface IPropertyEventPayload {
-  /** Название изменяемого свойства. */
+  /** The changed property name. */
   property: string;
-  /** Старое значение свойства до изменения. */
-  oldValue: any;
-  /** Новое значение свойства после изменения. */
-  newValue: any;
+  /** The property value before the change. */
+  oldValue: unknown;
+  /** The property value after the change. */
+  newValue: unknown;
 }
 
 /**
- * Интерфейс события, наблюдаемого для сущности.
- * Содержит тип события (из EntityEvent) и дополнительную полезную нагрузку (payload).
+ * Base observable event for an entity.
+ *
+ * @template TPayload - Event payload type.
  */
-export interface IObservableEvent {
-  /** Тип события, соответствующий этапу жизненного цикла сущности. */
+export interface IObservableEvent<TPayload = unknown> {
+  /** The event type. */
   event: EntityEvent;
-  /** Дополнительные данные, связанные с событием. */
-  payload?: any;
+  /** Optional event payload. */
+  payload?: TPayload;
 }
 
 /**
- * Интерфейс события изменения конкретного свойства.
- * Наследует общий интерфейс IObservableEvent и уточняет payload как IPropertyEventPayload.
+ * Event emitted when a property is changed.
  */
-export interface IPropertyEvent extends IObservableEvent {
-  /** Полезная нагрузка события, содержащая информацию об изменении свойства. */
+export interface IPropertyEvent
+  extends IObservableEvent<IPropertyEventPayload> {
+  /** Property-change payload. */
   payload: IPropertyEventPayload;
 }

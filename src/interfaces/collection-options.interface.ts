@@ -1,6 +1,6 @@
 export interface ICollectionOptions {
-  /** Включает/выключает создание снапшотов состояния коллекции (паттерн Memento). */
+  /** Enables/disables snapshot creation (Memento pattern). */
   enableSnapshots?: boolean;
-  /** Включает/выключает работу транзакций (группировку изменений). */
+  /** Enables/disables transactions (grouping multiple changes). */
   enableTransactions?: boolean;
 }

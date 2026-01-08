@@ -1,11 +1,20 @@
 import { EntityEvent } from './observable.interface';
 
 /**
- * Интерфейс обработчика событий для сущностей.
+ * Entity event handler definition.
+ *
+ * @template TEntity - Entity type.
+ * @template TPayload - Payload type.
  */
-export interface IEventHandler<T = any> {
-  /** Название события, например, 'creating', 'updated' и т.д. */
+export interface IEventHandler<TEntity = unknown, TPayload = unknown> {
+  /** Event name, e.g. `EntityEvent.Created`. */
   eventName: EntityEvent;
-  /** Callback-функция, которая вызывается при срабатывании события */
-  callback: (entity: T, payload?: any) => void;
+  /**
+   * Callback invoked when the event fires.
+   *
+   * @param {TEntity} entity - The entity instance.
+   * @param {TPayload | undefined} payload - Optional event payload.
+   * @returns {void}
+   */
+  callback: (entity: TEntity, payload?: TPayload) => void;
 }

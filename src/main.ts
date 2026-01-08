@@ -1,19 +1,31 @@
-export * as Collections from './collections/base-collection';
-export * as CollectionContract from './collections/collection.contract';
+// Public API (root exports)
+export { BaseCollection } from './collections/base-collection';
+export type { ICollection } from './collections/collection.contract';
 
-export * as BaseTransformEntityContract from './contracts/base-transform-entity.contract';
-export * as ObservableContract from './contracts/observable.contract';
-export * as RepositoryAdapterContract from './contracts/repository.adapter.contract';
+export { BaseEntity } from './entities/base-entity';
 
-export * as BaseEntity from './entities/base-entity';
+export type { IBaseEntity } from './interfaces/base.entity.interface';
+export type { ICollectionOptions } from './interfaces/collection-options.interface';
 
-export * as BaseEntityInterface from './interfaces/base.entity.interface';
-export * as CollectionOptions from './interfaces/collection-options.interface';
+export { deepClone } from './utils/clone';
 
-export * as CollectionEvents from './observers/collection-events';
-export * as ObservableInterface from './observers/observable.interface';
-export * as ObserverTypes from './observers/observer-types';
+export { EntityEvent } from './observers/observable.interface';
+export type {
+  EntityEventType,
+  IObservableEvent,
+  IPropertyEvent,
+  IPropertyEventPayload,
+} from './observers/observable.interface';
 
-export * as Utils from './utils/clone';
+export type {
+  CollectionEvent,
+  CollectionEventType,
+  ICollectionEvent,
+} from './observers/collection-events';
 
-export * as VisitorContract from './contracts/visitor.contract';
+export type { IEventHandler } from './observers/observer-types';
+
+export { IBaseTransformEntityContract } from './contracts/base-transform-entity.contract';
+export type { IObservable } from './contracts/observable.contract';
+export type { IRepositoryAdapter } from './contracts/repository.adapter.contract';
+export type { IVisitor } from './contracts/visitor.contract';

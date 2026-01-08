@@ -1,7 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import { validate, ValidationError } from 'class-validator';
 import 'reflect-metadata';
-import { Observable, Subject } from 'rxjs';
+import { Observable, Subject, Subscription } from 'rxjs';
 import { IBaseTransformEntityContract } from '../contracts/base-transform-entity.contract';
 import { IObservable } from '../contracts/observable.contract';
 import { IBaseEntity } from '../interfaces/base.entity.interface';
@@ -11,126 +11,257 @@ import {
   IPropertyEvent,
   IPropertyEventPayload,
 } from '../observers/observable.interface';
+import { deepClone } from '../utils/clone';
 
 /**
- * Базовый класс для сущностей.
- * валидацию и эмит событий жизненного цикла (Observer).
- * Также реализует интерфейс IObservable, позволяющий отслеживать изменения отдельных свойств.
+ * Base entity with:
+ * - plain-object transformation and validation (`class-transformer`, `class-validator`)
+ * - lifecycle events (Observer via RxJS)
+ * - property change tracking (via `Proxy`)
  *
- * Теперь изменения свойств перехватываются через Proxy – не нужно вручную создавать аксессоры для каждого поля.
+ * Property writes are intercepted by a `Proxy`, so you do not need to implement manual accessors
+ * for every field to emit change events.
  */
 export class BaseEntity
   implements IBaseEntity, IBaseTransformEntityContract, IObservable
 {
-  // Можно объявлять свойства как обычно.
-  // Если требуется, чтобы они автоматически отслеживались, Proxy перехватит их запись.
+  /** Entity identifier. */
   public id!: string;
+  /** Creation timestamp. */
   public createdAt!: Date;
+  /** Update timestamp. */
   public updatedAt!: Date;
+  /** Creator identifier. */
   public createdBy!: string;
+  /** Updater identifier. */
   public updatedBy!: string;
 
   /**
-   * RxJS Subject для эмита событий жизненного цикла сущности.
-   * Эмитируются события: creating, created, updating, updated, deleting, deleted, restoring, restored.
+   * RxJS subject for entity lifecycle events.
+   *
+   * Emits: creating/created, updating/updated, deleting/deleted, restoring/restored, etc.
    */
-  protected eventSubject = new Subject<IObservableEvent>();
+  protected eventSubject = new Subject<IObservableEvent<unknown>>();
 
   /**
-   * Subject для отслеживания изменений отдельных свойств сущности.
-   * События содержат: название свойства, старое и новое значение.
+   * RxJS subject for property change events.
    */
   private propertyChangeSubject = new Subject<IPropertyEvent>();
 
+  /** Internal flag used to apply state restores without emitting events. */
+  private trackingSuspended = false;
+
   /**
-   * Возвращает Observable, который эмитит события изменения отдельных свойств сущности.
+   * Returns an observable stream of entity lifecycle events.
+   *
+   * @returns {Observable<IObservableEvent<unknown>>} Observable of entity lifecycle events.
    */
-  public getEntityObservable(): Observable<{
-    event: EntityEvent;
-    payload?: any;
-  }> {
+  public getEntityObservable(): Observable<IObservableEvent<unknown>> {
     return this.eventSubject.asObservable();
   }
 
   /**
-   * Возвращает Observable, который эмитит события изменения отдельных свойств сущности.
+   * Returns an observable stream of property change events.
+   *
+   * @returns {Observable<IPropertyEvent>} Observable of property change events.
    */
   public getPropertyObservable(): Observable<IPropertyEvent> {
     return this.propertyChangeSubject.asObservable();
   }
 
   /**
-   * Подписывается на события жизненного цикла сущности.
+   * Subscribes to entity lifecycle events.
    *
-   * @param handler Функция-обработчик, получающая объект события с его типом и дополнительными данными.
+   * @param {(data: IObservableEvent<unknown>) => void} handler - Event handler.
    *
-   * @returns Объект Subscription для управления подпиской.
+   * @returns {Subscription} Subscription instance.
    */
-  public subscribeEntityEvents(handler: (data: IObservableEvent) => void) {
+  public subscribeEntityEvents(
+    handler: (data: IObservableEvent<unknown>) => void,
+  ): Subscription {
     return this.eventSubject.subscribe(handler);
   }
 
   /**
-   * Подписывается на события жизненного цикла .
+   * Subscribes to property change events.
    *
-   * @param handler Функция-обработчик, получающая объект события с его типом и дополнительными данными.
+   * @param {(data: IPropertyEvent) => void} handler - Event handler.
    *
-   * @returns Объект Subscription для управления подпиской.
+   * @returns {Subscription} Subscription instance.
    */
-  public subscribePropertyEvents(handler: (data: IPropertyEvent) => void) {
+  public subscribePropertyEvents(
+    handler: (data: IPropertyEvent) => void,
+  ): Subscription {
     return this.propertyChangeSubject.subscribe(handler);
   }
 
   /**
-   * Конструктор оборачивает экземпляр в Proxy для перехвата операций записи.
+   * Wraps the instance in a `Proxy` to intercept property writes.
    *
-   * При изменении свойства (если новое значение отличается от старого) происходит:
-   * 1. Эмитируется событие "до обновления" (EntityEvent.Updating)
-   * 2. Фактическое обновление свойства (Reflect.set)
-   * 3. Эмитируется событие изменения свойства с флагом isProperty === true
-   * 4. Эмитируется событие "после обновления" (EntityEvent.Updated)
+   * When a property changes (and the new value differs from the old one):
+   * 1) emit `EntityEvent.Updating` on the entity stream
+   * 2) perform the write on the underlying target
+   * 3) emit `EntityEvent.Updated` on the property stream
+   * 4) emit `EntityEvent.Updated` on the entity stream
+   *
+   * @param {...readonly unknown[]} _args - Unused arguments (kept for compatibility with subclasses).
    */
-  constructor(...args: any[]) {
-    return new Proxy(this, {
-      set: (target, property, value, receiver) => {
-        // Не обрабатываем специальные свойства и символы.
-        if (typeof property === 'string' && property[0] !== '_') {
-          // Извлекаем старое значение (если оно уже есть)
-          const oldValue = target[property as keyof this];
-          // Если значение не меняется — ничего не делаем.
-          if (oldValue !== value) {
-            const properties = {
-              property,
-              oldValue,
-              newValue: value,
-            };
-            // Эмитируем событие до обновления
-            target.emitEntityEvent(EntityEvent.Updating, properties);
-            // Производим обновление свойства.
-            // Чтобы не попасть в рекурсию, используем Reflect.set напрямую.
-            Reflect.set(target, property, value);
-            // Эмитируем событие изменения конкретного свойства
-            target.emitPropertyEvent(EntityEvent.Updated, properties);
-            // Эмитируем событие после обновления
-            target.emitEntityEvent(EntityEvent.Updated, properties);
-          }
-          return true;
-        }
-        // Если свойство начинается с "_" или не является строкой – просто обновляем.
+  constructor(..._args: readonly unknown[]) {
+    /**
+     * Proxy `set` trap used to track property writes.
+     *
+     * @param {BaseEntity} target - Proxy target.
+     * @param {string | symbol} property - Property key.
+     * @param {unknown} value - New value.
+     * @param {unknown} receiver - Write receiver.
+     * @returns {boolean} True when the write succeeds.
+     */
+    function setTrap(
+      target: BaseEntity,
+      property: string | symbol,
+      value: unknown,
+      receiver: unknown,
+    ): boolean {
+      // Do not track writes to internal state used by `BaseEntity` itself.
+      if (
+        typeof property === 'string' &&
+        target.isInternalSnapshotKey(property)
+      ) {
         return Reflect.set(target, property, value, receiver);
-      },
-    });
+      }
+
+      // During restores, perform writes without emitting events.
+      if (target.trackingSuspended) {
+        return Reflect.set(target, property, value, receiver);
+      }
+
+      // Only track "regular" string properties (skip private/technical keys).
+      if (typeof property === 'string' && property[0] !== '_') {
+        // Read the previous value from the underlying target object.
+        const oldValue: unknown = Reflect.get(target, property);
+
+        // If the value is unchanged, do nothing.
+        if (!Object.is(oldValue, value)) {
+          const properties: IPropertyEventPayload = {
+            property,
+            oldValue,
+            newValue: value,
+          };
+          // Emit "before update" on the entity stream.
+          target.emitEntityEvent(EntityEvent.Updating, properties);
+
+          // Perform the write on the target object (avoid re-entering the proxy setter).
+          Reflect.set(target, property, value);
+
+          // Emit "property updated" event on the property stream.
+          target.emitPropertyEvent(EntityEvent.Updated, properties);
+
+          // Emit "after update" on the entity stream.
+          target.emitEntityEvent(EntityEvent.Updated, properties);
+        }
+        return true;
+      }
+      // For private keys or symbols: do a regular write.
+      return Reflect.set(target, property, value, receiver);
+    }
+
+    return new Proxy(this, { set: setTrap });
   }
 
   /**
-   * Преобразует plain объект в экземпляр класса и проводит валидацию.
-   * Если валидация не проходит, выбрасывается ошибка с подробным описанием.
+   * Checks whether a key should be excluded from state snapshots.
    *
-   * @param plain Объект для преобразования.
+   * @param {string} key - Property key.
+   * @returns {boolean} True when the key is internal to `BaseEntity`.
+   */
+  private isInternalSnapshotKey(key: string): boolean {
+    return (
+      key === 'eventSubject' ||
+      key === 'propertyChangeSubject' ||
+      key === 'trackingSuspended'
+    );
+  }
+
+  /**
+   * Captures a snapshot of the current entity state (Memento).
    *
-   * @returns Преобразованный и валидированный экземпляр класса.
+   * Only enumerable own properties are included. Internal observables and underscored properties are excluded.
    *
-   * @throws Error, если возникли ошибки валидации.
+   * @returns {Readonly<Record<string, unknown>>} Snapshot object.
+   */
+  public captureSnapshot(): Readonly<Record<string, unknown>> {
+    const snapshot: Record<string, unknown> = {};
+
+    for (const key of Object.keys(this)) {
+      // Skip internal and underscored keys.
+      if (key[0] === '_' || this.isInternalSnapshotKey(key)) {
+        continue;
+      }
+
+      const value: unknown = Reflect.get(this, key);
+
+      // Skip methods and function-valued fields.
+      if (typeof value === 'function') {
+        continue;
+      }
+
+      // Clone values to make the snapshot immune to later in-place mutations.
+      Reflect.set(snapshot, key, deepClone(value));
+    }
+
+    return snapshot;
+  }
+
+  /**
+   * Restores entity state from a snapshot (Memento).
+   *
+   * The restore is applied without emitting lifecycle or property events.
+   *
+   * @param {Readonly<Record<string, unknown>>} snapshot - Snapshot object produced by `captureSnapshot()`.
+   * @returns {void}
+   */
+  public restoreSnapshot(snapshot: Readonly<Record<string, unknown>>): void {
+    const snapshotKeys = Object.keys(snapshot);
+    const snapshotKeySet = new Set<string>(snapshotKeys);
+
+    this.trackingSuspended = true;
+
+    try {
+      // Remove keys that no longer exist in the snapshot.
+      for (const key of Object.keys(this)) {
+        if (key[0] === '_' || this.isInternalSnapshotKey(key)) {
+          continue;
+        }
+
+        if (!snapshotKeySet.has(key)) {
+          Reflect.deleteProperty(this, key);
+        }
+      }
+
+      // Restore snapshot values.
+      for (const key of snapshotKeys) {
+        if (key[0] === '_' || this.isInternalSnapshotKey(key)) {
+          continue;
+        }
+
+        const value: unknown = Reflect.get(snapshot, key);
+        Reflect.set(this, key, deepClone(value));
+      }
+    } finally {
+      this.trackingSuspended = false;
+    }
+  }
+
+  /**
+   * Transforms a plain object into an entity instance and validates it.
+   *
+   * @template T
+   * @param {new () => T} this - Concrete entity constructor.
+   * @param {object} plain - Plain object to transform.
+   *
+   * @returns {Promise<T>} Validated entity instance.
+   *
+   * @throws {Error} When validation fails.
    */
   static async plainToInstance<T extends BaseEntity>(
     this: new () => T,
@@ -151,40 +282,44 @@ export class BaseEntity
   }
 
   /**
-   * Форматирует ошибки валидации в читаемую строку.
+   * Formats validation errors into a readable string.
    *
-   * @param errors Массив ошибок валидации.
+   * @param {ValidationError[]} errors - Validation errors.
    *
-   * @returns Строка с описанием ошибок.
+   * @returns {string} Human-readable error message.
    */
   private static formatValidationErrors(errors: ValidationError[]): string {
-    return errors
-      .map((error) => {
-        const constraints = error.constraints
-          ? Object.values(error.constraints).join(', ')
-          : 'Неизвестная ошибка валидации';
-        return `Свойство: ${error.property} - ${constraints}`;
-      })
-      .join('\n');
+    const messages: string[] = [];
+
+    for (const error of errors) {
+      const constraints = error.constraints
+        ? Object.values(error.constraints).join(', ')
+        : 'Unknown validation error';
+      messages.push(`Property: ${error.property} - ${constraints}`);
+    }
+
+    return messages.join('\n');
   }
 
   /**
-   * Эмитирует событие жизненного цикла сущности.
+   * Emits an entity lifecycle event.
    *
-   * @param event Тип события (например, creating, updated и т.д.).
+   * @param {EntityEvent} event - Event type.
    *
-   * @param payload Дополнительные данные, связанные с событием.
+   * @param {unknown} [payload] - Optional event payload.
+   * @returns {void}
    */
-  protected emitEntityEvent(event: EntityEvent, payload?: any): void {
+  protected emitEntityEvent(event: EntityEvent, payload?: unknown): void {
     this.eventSubject.next({ event, payload });
   }
 
   /**
-   * Эмитирует событие жизненного цикла свойства.
+   * Emits a property lifecycle event.
    *
-   * @param event Тип события (например, creating, updated и т.д.).
+   * @param {EntityEvent} event - Event type.
    *
-   * @param payload Дополнительные данные, связанные с событием.
+   * @param {IPropertyEventPayload} payload - Property-change payload.
+   * @returns {void}
    */
   protected emitPropertyEvent(
     event: EntityEvent,
@@ -193,44 +328,75 @@ export class BaseEntity
     this.propertyChangeSubject.next({ event, payload });
   }
 
-  // Методы для явного вызова событий жизненного цикла
+  /**
+   * Explicit lifecycle hook: `creating`.
+   *
+   * @returns {void}
+   */
 
-  /** Вызывает событие создания сущности до сохранения. */
   public creating(): void {
     this.emitEntityEvent(EntityEvent.Creating);
   }
 
-  /** Вызывает событие после успешного создания сущности. */
+  /**
+   * Explicit lifecycle hook: `created`.
+   *
+   * @returns {void}
+   */
   public created(): void {
     this.emitEntityEvent(EntityEvent.Created);
   }
 
-  /** Вызывает событие обновления сущности до сохранения. */
+  /**
+   * Explicit lifecycle hook: `updating`.
+   *
+   * @returns {void}
+   */
   public updating(): void {
     this.emitEntityEvent(EntityEvent.Updating);
   }
 
-  /** Вызывает событие после успешного обновления сущности. */
+  /**
+   * Explicit lifecycle hook: `updated`.
+   *
+   * @returns {void}
+   */
   public updated(): void {
     this.emitEntityEvent(EntityEvent.Updated);
   }
 
-  /** Вызывает событие до удаления сущности. */
+  /**
+   * Explicit lifecycle hook: `deleting`.
+   *
+   * @returns {void}
+   */
   public deleting(): void {
     this.emitEntityEvent(EntityEvent.Deleting);
   }
 
-  /** Вызывает событие после успешного удаления сущности. */
+  /**
+   * Explicit lifecycle hook: `deleted`.
+   *
+   * @returns {void}
+   */
   public deleted(): void {
     this.emitEntityEvent(EntityEvent.Deleted);
   }
 
-  /** Вызывает событие до восстановления сущности. */
+  /**
+   * Explicit lifecycle hook: `restoring`.
+   *
+   * @returns {void}
+   */
   public restoring(): void {
     this.emitEntityEvent(EntityEvent.Restoring);
   }
 
-  /** Вызывает событие после успешного восстановления сущности. */
+  /**
+   * Explicit lifecycle hook: `restored`.
+   *
+   * @returns {void}
+   */
   public restored(): void {
     this.emitEntityEvent(EntityEvent.Restored);
   }

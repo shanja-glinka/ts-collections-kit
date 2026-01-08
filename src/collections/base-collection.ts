@@ -1,302 +1,493 @@
-import collect, { Collection as CollectJsCollection } from 'collect.js';
+import { Collection } from 'collect.js';
+import type { CollectionKey } from 'collect.js';
 import { Subject, Subscription } from 'rxjs';
 import { IObservable } from '../contracts/observable.contract';
 import { IVisitor } from '../contracts/visitor.contract';
 import { ICollectionOptions } from '../interfaces/collection-options.interface';
 import { CollectionEvent } from '../observers/collection-events';
-import { deepClone } from '../utils/clone';
+import {
+  EntityEvent,
+  type IObservableEvent,
+  type IPropertyEvent,
+} from '../observers/observable.interface';
 import { ICollection } from './collection.contract';
 
 /**
- * Получаем конструктор базовой коллекции из collect.js.
+ * Snapshot of a single item state captured from a snapshot-capable entity.
+ *
+ * @template TItem - Item type.
  */
-const BaseCollectionConstructor = collect([]).constructor as {
-  new <T>(items: T[]): CollectJsCollection<T>;
-};
+interface IItemSnapshot<TItem> {
+  /** Item instance at the time of the snapshot. */
+  item: TItem;
+  /** Snapshot object produced by the item. */
+  snapshot: Readonly<Record<string, unknown>>;
+}
 
 /**
- * Класс BaseCollection расширяет функциональность коллекции из collect.js,
- * добавляя поддержку паттернов Memento, Observer, Visitor и транзакционное
- * сохранение состояния с генерацией токена (timestamp в мс). Функциональность
- * создания снапшотов и транзакций может быть включена или отключена через опции.
+ * Collection snapshot entry (Memento).
+ *
+ * This snapshot is designed to be safe with observable entities:
+ * - the item list is stored by reference (structural rollback)
+ * - snapshot-capable entities provide their own state mementos (property rollback without replacing instances)
+ *
+ * @template TItem - Item type.
  */
-export class BaseCollection<T>
-  extends BaseCollectionConstructor<T>
-  implements ICollection<T>
-{
-  [key: string]: any;
+interface ICollectionSnapshot<TItem> {
+  /** Snapshot token (timestamp in milliseconds). */
+  token: number;
+  /** Item list captured at snapshot time. */
+  items: TItem[];
+  /** Per-item state snapshots for snapshot-capable items. */
+  itemSnapshots: Array<IItemSnapshot<TItem>>;
+}
 
-  /** Опции коллекции (снапшоты и транзакции). По умолчанию отключены. */
-  protected options: ICollectionOptions;
+/**
+ * `BaseCollection` is a Laravel-like collection (powered by `collect.js`) that adds:
+ * - snapshots (Memento)
+ * - transactions
+ * - event stream (Observer via RxJS)
+ * - visitors (Visitor pattern)
+ *
+ * @template T - Collection item type.
+ */
+export class BaseCollection<T> extends Collection<T> implements ICollection<T> {
+  /** Collection options controlling snapshots and transactions. */
+  protected options: Required<ICollectionOptions>;
 
   /**
-   * Глобальная история снимков коллекции, где каждый снимок имеет свой токен состояния.
+   * Global snapshot history.
+   *
+   * Each snapshot is identified by a token (timestamp in milliseconds).
    */
-  protected history: { token: number; state: T[] }[] = [];
+  protected history: Array<ICollectionSnapshot<T>> = [];
 
-  /**
-   * Флаг, показывающий, что в данный момент выполняется транзакция.
-   */
+  /** Whether a transaction is currently active. */
   protected transactionActive = false;
-  /**
-   * Токен текущей транзакции (timestamp в мс).
-   */
+  /** Current transaction token (timestamp in milliseconds). */
   protected transactionToken: number | null = null;
-  /**
-   * Локальная история снимков внутри транзакции.
-   */
-  protected transactionHistory: T[][] = [];
+  /** Initial state captured at `beginTransaction()` for rollback. */
+  protected transactionInitialState: ICollectionSnapshot<T> | null = null;
 
-  /**
-   * Subject для эмита событий коллекции (Observer).
-   */
+  /** RxJS subject that emits collection events (Observer pattern). */
   protected eventsSubject = new Subject<CollectionEvent<T>>();
-  /**
-   * Здесь будем хранить подписки на события сущностей.
-   */
+  /** Subscriptions to entity observables inside the collection. */
   protected entitySubscriptions: Subscription[] = [];
 
   /**
-   * Конструктор коллекции.
-   * @param initialItems Начальные элементы коллекции.
-   * @param options Опции для включения/выключения снапшотов и транзакций.
+   * Creates a collection instance.
+   *
+   * @param {readonly T[] | undefined} initialItems - Initial collection items.
+   * @param {ICollectionOptions | undefined} options - Snapshot/transaction options.
    */
-  constructor(initialItems?: T[], options?: ICollectionOptions) {
-    super(initialItems || []);
-    // Устанавливаем опции по умолчанию: обе функциональности отключены.
+  constructor(initialItems?: readonly T[], options?: ICollectionOptions) {
+    super(initialItems ?? []);
+
     this.options = {
-      enableSnapshots: false,
-      enableTransactions: false,
-      ...options,
+      enableSnapshots: options?.enableSnapshots ?? false,
+      enableTransactions: options?.enableTransactions ?? false,
     };
 
-    // Подписываемся на события от наблюдаемых сущностей
-    (initialItems || []).forEach((item) => {
+    // Subscribe to observable entities (when present) in the initial set.
+    for (const item of initialItems ?? []) {
       this.subscribeToItem(item);
-    });
-  }
-
-  /**
-   * Подписывается на события наблюдаемой сущности.
-   * Если сущность реализует IObservable, подписывается на её события и сохраняет подписку.
-   */
-  private subscribeToItem(item: T): void {
-    if (
-      (item as any).getPropertyObservable &&
-      typeof (item as any).getPropertyObservable === 'function'
-    ) {
-      const sub = (item as unknown as IObservable)
-        .getPropertyObservable()
-        .subscribe((eventData) => {
-          // Если транзакция не активна и включены снапшоты, создаём снапшот.
-          if (!this.transactionActive && this.options.enableSnapshots) {
-            this.snapshot();
-          }
-          this.eventsSubject.next({
-            type: eventData.event,
-            payload: { item, change: eventData },
-          });
-        });
-      const sub2 = (item as unknown as IObservable)
-        .getEntityObservable()
-        .subscribe((eventData) => {
-          if (
-            eventData.event === 'updating' &&
-            !this.transactionActive &&
-            this.options.enableSnapshots
-          ) {
-            this.snapshot();
-          }
-        });
-      this.entitySubscriptions.push(sub);
-      this.entitySubscriptions.push(sub2);
     }
   }
 
   /**
-   * Возвращает все элементы коллекции.
+   * Type guard that checks whether a value implements the `IObservable` contract.
+   *
+   * @param {unknown} value - Value to inspect.
+   * @returns {value is IObservable} True if the value looks like an observable entity.
+   */
+  private isObservableEntity(value: unknown): value is IObservable {
+    if (typeof value !== 'object' || value === null) {
+      return false;
+    }
+
+    const getEntityObservable: unknown = Reflect.get(
+      value,
+      'getEntityObservable',
+    );
+    const getPropertyObservable: unknown = Reflect.get(
+      value,
+      'getPropertyObservable',
+    );
+
+    return (
+      typeof getEntityObservable === 'function' &&
+      typeof getPropertyObservable === 'function'
+    );
+  }
+
+  /**
+   * Unsubscribes from all entity subscriptions created by this collection.
+   *
+   * @returns {void}
+   */
+  private unsubscribeFromAllEntities(): void {
+    for (const subscription of this.entitySubscriptions) {
+      subscription.unsubscribe();
+    }
+    this.entitySubscriptions = [];
+  }
+
+  /**
+   * Re-subscribes to observables for all current items.
+   *
+   * This is used after bulk state replacements (rollback, transaction rollback) to avoid leaking
+   * subscriptions and to prevent duplicate event forwarding.
+   *
+   * @returns {void}
+   */
+  private resubscribeToAllItems(): void {
+    this.unsubscribeFromAllEntities();
+    for (const item of this.all()) {
+      this.subscribeToItem(item);
+    }
+  }
+
+  /**
+   * Subscribes to observable entity events and forwards them to the collection event stream.
+   *
+   * @param {T} item - Collection item to subscribe to.
+   * @returns {void}
+   */
+  private subscribeToItem(item: T): void {
+    if (!this.isObservableEntity(item)) {
+      return;
+    }
+
+    const collection = this;
+
+    /**
+     * Forwards entity property change events into the collection event stream.
+     *
+     * @param {IPropertyEvent} eventData - Entity property event.
+     * @returns {void}
+     */
+    function onPropertyEvent(eventData: IPropertyEvent): void {
+      // Forward property change events to the collection stream.
+      collection.eventsSubject.next({
+        type: eventData.event,
+        payload: { item, change: eventData.payload },
+      });
+    }
+
+    const propertySubscription = item
+      .getPropertyObservable()
+      .subscribe(onPropertyEvent);
+
+    /**
+     * Tracks entity lifecycle updates to create pre-mutation snapshots.
+     *
+     * @param {IObservableEvent<unknown>} eventData - Entity lifecycle event.
+     * @returns {void}
+     */
+    function onLifecycleEvent(eventData: IObservableEvent<unknown>): void {
+      // Take a snapshot BEFORE an entity mutation (outside of a transaction) when snapshots are enabled.
+      if (
+        eventData.event === EntityEvent.Updating &&
+        !collection.transactionActive &&
+        collection.options.enableSnapshots
+      ) {
+        collection.snapshot();
+      }
+    }
+
+    const lifecycleSubscription = item
+      .getEntityObservable()
+      .subscribe(onLifecycleEvent);
+
+    this.entitySubscriptions.push(propertySubscription, lifecycleSubscription);
+  }
+
+  /**
+   * Type guard verifying that an item supports snapshot capture and restore.
+   *
+   * @param {unknown} value - Value to inspect.
+   * @returns {value is { captureSnapshot: () => Readonly<Record<string, unknown>>; restoreSnapshot: (snapshot: Readonly<Record<string, unknown>>) => void }} True when the item exposes snapshot methods.
+   */
+  private isSnapshotCapableItem(value: unknown): value is {
+    captureSnapshot: () => Readonly<Record<string, unknown>>;
+    restoreSnapshot: (snapshot: Readonly<Record<string, unknown>>) => void;
+  } {
+    if (typeof value !== 'object' || value === null) {
+      return false;
+    }
+
+    const capture: unknown = Reflect.get(value, 'captureSnapshot');
+    const restore: unknown = Reflect.get(value, 'restoreSnapshot');
+
+    return typeof capture === 'function' && typeof restore === 'function';
+  }
+
+  /**
+   * Captures the current collection state into a snapshot entry.
+   *
+   * @param {number} token - Snapshot token.
+   * @returns {ICollectionSnapshot<T>} Snapshot entry.
+   */
+  private captureCollectionSnapshot(token: number): ICollectionSnapshot<T> {
+    const items = Array.from(this.all());
+    const itemSnapshots: Array<IItemSnapshot<T>> = [];
+
+    for (const item of items) {
+      if (this.isSnapshotCapableItem(item)) {
+        itemSnapshots.push({ item, snapshot: item.captureSnapshot() });
+      }
+    }
+
+    return { token, items, itemSnapshots };
+  }
+
+  /**
+   * Restores item snapshots for snapshot-capable items.
+   *
+   * @param {readonly IItemSnapshot<T>[]} itemSnapshots - Item snapshots.
+   * @returns {void}
+   */
+  private restoreItemSnapshots(
+    itemSnapshots: readonly IItemSnapshot<T>[],
+  ): void {
+    for (const entry of itemSnapshots) {
+      if (this.isSnapshotCapableItem(entry.item)) {
+        entry.item.restoreSnapshot(entry.snapshot);
+      }
+    }
+  }
+
+  /**
+   * Replaces the internal items array used by `collect.js`.
+   *
+   * @param {readonly T[]} nextItems - New items to set.
+   * @returns {void}
+   */
+  private replaceItems(nextItems: readonly T[]): void {
+    Reflect.set(this, 'items', Array.from(nextItems));
+    this.resubscribeToAllItems();
+  }
+
+  /**
+   * Returns all items of the collection.
+   *
+   * @returns {T[]} Current items.
    */
   public getItems(): T[] {
     return this.all();
   }
 
   /**
-   * Создает снапшот текущего состояния коллекции.
-   * Если транзакция активна, сохраняет изменения в transactionHistory,
-   * иначе – в глобальной истории с токеном, равным текущему времени.
+   * Creates a snapshot of the current collection state (Memento pattern).
+   *
+   * @returns {void}
    */
   protected snapshot(): void {
-    // Если функциональность снапшотов отключена – ничего не делаем.
     if (!this.options.enableSnapshots) {
       return;
     }
-    const currentState = deepClone(this.all());
-    if (this.transactionActive) {
-      this.transactionHistory.push(currentState);
-    } else {
-      const token = Date.now();
-      this.history.push({ token, state: currentState });
-    }
+
+    const token = Date.now();
+    const entry = this.captureCollectionSnapshot(token);
+    this.history.push(entry);
   }
 
   /**
-   * Очищает глобальную историю снапшотов.
+   * Clears the global snapshot history.
+   *
+   * @returns {void}
    */
   protected resetSnapshot(): void {
     this.history = [];
   }
 
   /**
-   * Начинает транзакцию изменений коллекции.
-   * Фиксирует начальное состояние и генерирует токен (timestamp).
+   * Begins a transaction.
    *
-   * @returns Токен транзакции.
-   * @throws Error если транзакции отключены или уже активна.
+   * The initial state is captured for `rollbackTransaction()`.
+   *
+   * @returns {number} Transaction token (timestamp in milliseconds).
+   * @throws {Error} If transactions are disabled or a transaction is already active.
    */
   public beginTransaction(): number {
     if (!this.options.enableTransactions) {
-      throw new Error('Транзакции отключены в настройках коллекции.');
+      throw new Error('Transactions are disabled for this collection.');
     }
     if (this.transactionActive) {
-      throw new Error('Транзакция уже активна');
+      throw new Error('A transaction is already active.');
     }
+
     this.transactionActive = true;
     this.transactionToken = Date.now();
-    // Фиксируем начальное состояние
-    if (this.options.enableSnapshots) {
-      this.transactionHistory = [deepClone(this.all())];
-    }
+    this.transactionInitialState = this.captureCollectionSnapshot(
+      this.transactionToken,
+    );
+
     return this.transactionToken;
   }
 
   /**
-   * Завершает транзакцию, фиксируя итоговое состояние коллекции вместе с токеном.
-   * Эмитирует событие 'commit' с итоговым состоянием и токеном транзакции.
+   * Commits the active transaction and optionally records a snapshot.
    *
-   * @returns Токен завершенной транзакции.
-   * @throws Error если транзакции отключены или не активна.
+   * @returns {number} Committed transaction token.
+   * @throws {Error} If transactions are disabled or there is no active transaction.
    */
   public commitTransaction(): number {
     if (!this.options.enableTransactions) {
-      throw new Error('Транзакции отключены в настройках коллекции.');
+      throw new Error('Transactions are disabled for this collection.');
     }
-    if (!this.transactionActive) {
-      throw new Error('Нет активной транзакции для фиксации');
+    if (!this.transactionActive || this.transactionToken === null) {
+      throw new Error('No active transaction to commit.');
     }
-    const token = this.transactionToken!;
-    const finalState = deepClone(this.all());
+
+    const token = this.transactionToken;
+
+    // Record the final state in snapshot history, when enabled.
     if (this.options.enableSnapshots) {
-      this.history.push({ token, state: finalState });
+      this.history.push(this.captureCollectionSnapshot(token));
     }
+
+    // Reset transaction state.
     this.transactionActive = false;
     this.transactionToken = null;
-    this.transactionHistory = [];
+    this.transactionInitialState = null;
+
     this.eventsSubject.next({
       type: 'commit',
       payload: { state: this.all(), token },
     });
+
     return token;
   }
 
   /**
-   * Откатывает коллекцию до состояния, зафиксированного в начале транзакции.
-   * Эмитирует событие 'rollback' с восстановленным состоянием.
+   * Rolls back the active transaction to the initial captured state.
    *
-   * @throws Error если транзакции отключены или не активна.
+   * @returns {void}
+   * @throws {Error} If transactions are disabled or there is no active transaction.
    */
   public rollbackTransaction(): void {
     if (!this.options.enableTransactions) {
-      throw new Error('Транзакции отключены в настройках коллекции.');
+      throw new Error('Transactions are disabled for this collection.');
     }
     if (!this.transactionActive) {
-      throw new Error('Нет активной транзакции для отката');
+      throw new Error('No active transaction to roll back.');
     }
-    // Восстанавливаем первоначальное состояние транзакции
-    if (this.options.enableSnapshots && this.transactionHistory.length) {
-      const initialState = this.transactionHistory[0];
-      (this as any).items = initialState;
+
+    // Restore the state captured at `beginTransaction()`.
+    if (this.transactionInitialState) {
+      this.replaceItems(this.transactionInitialState.items);
+      this.restoreItemSnapshots(this.transactionInitialState.itemSnapshots);
     }
+
+    // Reset transaction state.
     this.transactionActive = false;
     this.transactionToken = null;
-    this.transactionHistory = [];
+    this.transactionInitialState = null;
+
     this.eventsSubject.next({ type: 'rollback', payload: this.all() });
   }
 
   /**
-   * Добавляет элемент в коллекцию.
-   * Если транзакция не активна и включены снапшоты, фиксирует текущее состояние (Memento).
-   * Эмитирует событие 'add' и подписывается на изменения сущности, если она наблюдаемая.
+   * Adds an item to the collection.
    *
-   * @param item Элемент для добавления.
+   * When snapshots are enabled and no transaction is active, a snapshot is created before mutation.
+   *
+   * @param {T} item - Item to add.
+   * @returns {void}
    */
   public add(item: T): void {
     if (!this.transactionActive && this.options.enableSnapshots) {
       this.snapshot();
     }
+
     this.push(item);
     this.eventsSubject.next({ type: 'add', payload: item });
     this.subscribeToItem(item);
   }
 
   /**
-   * Удаляет элемент из коллекции.
-   * Фиксирует состояние перед удалением (если транзакция не активна и включены снапшоты)
-   * и эмитирует событие 'remove'.
+   * Removes an item from the collection.
    *
-   * @param item Элемент для удаления.
+   * When snapshots are enabled and no transaction is active, a snapshot is created before mutation.
+   *
+   * @param {T} item - Item to remove.
+   * @returns {void}
    */
   public remove(item: T): void {
     if (!this.transactionActive && this.options.enableSnapshots) {
       this.snapshot();
     }
-    const filtered = this.all().filter((i) => i !== item);
-    (this as any).items = filtered;
+
+    const nextItems: T[] = [];
+    for (const currentItem of this.all()) {
+      if (currentItem !== item) {
+        nextItems.push(currentItem);
+      }
+    }
+
+    this.replaceItems(nextItems);
     this.eventsSubject.next({ type: 'remove', payload: item });
   }
 
   /**
-   * Фиксирует изменения коллекции вне транзакции, очищая историю снапшотов,
-   * и эмитирует событие 'commit'.
+   * Commits changes outside a transaction.
+   *
+   * If a transaction is active, this delegates to `commitTransaction()`.
+   *
+   * @returns {void}
    */
   public commit(): void {
     if (this.transactionActive) {
       this.commitTransaction();
-    } else {
-      this.resetSnapshot();
-      (this as any).items = this.all();
-      this.eventsSubject.next({
-        type: 'commit',
-        payload: { state: this.all(), token: undefined },
-      });
+      return;
     }
+
+    // Outside transactions: "commit" means resetting snapshot history.
+    this.resetSnapshot();
+    this.eventsSubject.next({
+      type: 'commit',
+      payload: { state: this.all() },
+    });
   }
 
   /**
-   * Откатывает последнее изменение коллекции (вне транзакции), восстанавливая состояние из истории,
-   * и эмитирует событие 'rollback'.
+   * Rolls back the last snapshot (outside a transaction).
+   *
+   * @returns {void}
    */
   public rollback(): void {
-    if (this.history.length) {
-      const lastSnapshot = this.history.pop()!;
-      (this as any).items = lastSnapshot.state;
-      this.eventsSubject.next({ type: 'rollback', payload: this.all() });
+    if (this.history.length === 0) {
+      return;
+    }
+
+    const lastSnapshot = this.history.pop();
+    if (!lastSnapshot) {
+      return;
+    }
+
+    this.replaceItems(lastSnapshot.items);
+    this.restoreItemSnapshots(lastSnapshot.itemSnapshots);
+    this.eventsSubject.next({ type: 'rollback', payload: this.all() });
+  }
+
+  /**
+   * Applies a visitor to all items (Visitor pattern).
+   *
+   * @param {IVisitor<T>} visitor - Visitor instance.
+   * @returns {void}
+   */
+  public accept(visitor: IVisitor<T>): void {
+    for (const item of this.all()) {
+      visitor.visit(item);
     }
   }
 
   /**
-   * Применяет Visitor ко всем элементам коллекции.
+   * Subscribes to collection events (Observer pattern).
    *
-   * @param visitor Посетитель, который будет применен ко всем элементам.
-   */
-  public accept(visitor: IVisitor<T>): void {
-    this.all().forEach((item) => visitor.visit(item));
-  }
-
-  /**
-   * Подписывается на события коллекции.
-   *
-   * @param callback Функция, вызываемая при наступлении события.
-   * @returns Subscription для управления подпиской.
+   * @param {(event: CollectionEvent<T>) => void} callback - Event callback.
+   * @returns {Subscription} Subscription instance.
    */
   public subscribe(
     callback: (event: CollectionEvent<T>) => void,
@@ -305,63 +496,82 @@ export class BaseCollection<T>
   }
 
   /**
-   * Переопределенный метод map, чтобы возвращать экземпляр BaseCollection<U>.
-   * Оборачивает операцию в транзакцию: фиксируем состояние до и после трансформации,
-   * если транзакции включены.
+   * Maps items into a new `BaseCollection`.
    *
-   * @param callback Функция трансформации.
-   * @returns Новая коллекция с результатом map.
+   * @template U
+   * @param {(item: T, key: CollectionKey) => U} callback - Mapping function.
+   * @returns {BaseCollection<U>} New collection containing mapped items.
    */
   public override map<U>(
-    callback: (item: T, index: any) => U,
+    callback: (item: T, key: CollectionKey) => U,
   ): BaseCollection<U> {
-    let token = 0;
-    if (this.options.enableTransactions) {
-      token = this.beginTransaction();
-    }
-    const mapped = super.map(callback) as CollectJsCollection<U>;
+    const mapped = super.map(callback);
     const newCollection = new BaseCollection<U>(mapped.all(), this.options);
-    if (this.options.enableTransactions) {
-      this.commitTransaction();
-      newCollection.history.push({ token, state: newCollection.all() });
+
+    // If both features are enabled, attach a snapshot to the derived collection for traceability.
+    if (this.options.enableTransactions && this.options.enableSnapshots) {
+      newCollection.history.push(
+        newCollection.captureCollectionSnapshot(Date.now()),
+      );
     }
+
     return newCollection;
   }
 
   /**
-   * Переопределенный метод filter, чтобы возвращать экземпляр BaseCollection<T>.
-   * Фиксирует изменения через транзакцию, если транзакции включены.
+   * Filters items into a new `BaseCollection`.
    *
-   * @param fn Функция фильтрации.
-   * @returns Новая коллекция с отфильтрованными элементами.
+   * When no predicate is provided, the runtime removes "falsy" values (matches `collect.js` behavior).
+   *
+   * @param {(item: T, key: CollectionKey) => boolean | undefined} [predicate] - Filtering predicate.
+   * @returns {BaseCollection<T>} New collection containing filtered items.
    */
+  public override filter(): BaseCollection<T>;
   public override filter(
-    fn: (item: T, key?: any) => boolean,
+    predicate: (item: T, key: CollectionKey) => boolean,
+  ): BaseCollection<T>;
+  public override filter(
+    predicate?: (item: T, key: CollectionKey) => boolean,
   ): BaseCollection<T> {
-    let token = 0;
-    if (this.options.enableTransactions) {
-      token = this.beginTransaction();
-    }
-    const filtered = super.filter(fn) as CollectJsCollection<T>;
+    const filtered = super.filter(predicate);
     const newCollection = new BaseCollection<T>(filtered.all(), this.options);
-    if (this.options.enableTransactions) {
-      this.commitTransaction();
-      newCollection.history.push({ token, state: newCollection.all() });
+
+    // If both features are enabled, attach a snapshot to the derived collection for traceability.
+    if (this.options.enableTransactions && this.options.enableSnapshots) {
+      newCollection.history.push(
+        newCollection.captureCollectionSnapshot(Date.now()),
+      );
     }
+
     return newCollection;
   }
 
   /**
-   * Переопределенный метод reduce, приводя его к ожидаемой сигнатуре.
+   * Reduces items to a single value.
    *
-   * @param callback Функция редукции.
-   * @param initial Начальное значение.
-   * @returns Результат редукции.
+   * @template U
+   * Note: when no initial value is provided, the runtime starts with `null`.
+   *
+   * @param {(carry: U | null, item: T, key: CollectionKey) => U} callback - Reducer function.
+   * @param {U | undefined} [initial] - Optional initial accumulator value.
+   * @returns {U | null} Reduced value.
    */
   public override reduce<U>(
-    callback: (carry: U | null, item: T, key?: any) => U,
+    callback: (carry: U | null, item: T, key: CollectionKey) => U,
+  ): U | null;
+  public override reduce<U>(
+    callback: (carry: U | null, item: T, key: CollectionKey) => U,
     initial: U,
-  ): U {
-    return super.reduce(callback, initial) as U;
+  ): U;
+  public override reduce<U>(
+    callback: (carry: U | null, item: T, key: CollectionKey) => U,
+    initial?: U,
+  ): U | null {
+    // When `initial` is not provided, `collect.js` starts the accumulator at `null`.
+    if (initial === undefined) {
+      return super.reduce(callback);
+    }
+
+    return super.reduce(callback, initial);
   }
 }

@@ -1,17 +1,21 @@
 /**
- * Контракт для преобразования обычных (plain) объектов в экземпляры сущностей.
- * Этот контракт можно расширять при необходимости.
+ * Contract-like base for transforming plain objects into entity instances.
+ *
+ * Note: TypeScript cannot truly enforce static methods through interfaces, so this class exists
+ * primarily for documentation and a shared shape for implementations.
  */
 export abstract class IBaseTransformEntityContract {
   /**
-   * Преобразует обычный объект в экземпляр текущего класса и выполняет его валидацию.
+   * Transforms a plain object into an instance and validates it.
    *
-   * @param plain Обычный объект для преобразования.
-   * @returns Преобразованный и валидированный экземпляр.
+   * @template T
+   * @param {new () => T} this - Concrete constructor.
+   * @param {object} plain - Plain object to transform.
+   * @returns {Promise<T>} Validated instance.
    *
-   * @throws Ошибка, если валидация не проходит.
+   * @throws {Error} When validation fails.
    */
   static plainToInstance<T>(this: new () => T, plain: object): Promise<T> {
-    throw new Error('Метод не реализован.');
+    throw new Error('Method not implemented.');
   }
 }
