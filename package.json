@@ -72,5 +72,14 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3"
-  }
+  },
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/shanja-glinka/ts-collections-kit.git"
+    },
+    "homepage": "https://github.com/shanja-glinka/ts-collections-kit#readme",
+    "bugs": {
+      "url": "https://github.com/shanja-glinka/ts-collections-kit/issues"
+    }
+  
 }

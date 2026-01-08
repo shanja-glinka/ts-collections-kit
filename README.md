@@ -1,220 +1,105 @@
-# TS Collections Library
+# TS Collections Kit
 
-Библиотека TS Collections предоставляет расширенные возможности для работы с коллекциями сущностей в стиле Laravel. Реализованы паттерны Memento, Observer и Visitor, позволяющие сохранять и откатывать изменения, отслеживать события жизненного цикла и применять операции ко всем элементам коллекции.
+Type-safe Laravel-like collections + observable entities with snapshots, transactions, Visitor/Observer patterns, and full `collect.js` runtime API (no method gaps). Ideal when you need rich collection helpers, change tracking, and rollback in one package.
 
-## Проблема, которую решает пакет
+## Key Features
+- Full `collect.js` API at runtime with strict TypeScript types (own typings, no `any`).
+- `BaseCollection<T>`: snapshots (Memento), transactions, event stream (RxJS), Visitor, map/filter returning `BaseCollection`.
+- `BaseEntity`: proxy-based property tracking, lifecycle + property observables, class-transformer + class-validator integration, snapshot/restore on entities.
+- Observer integration: collection forwards entity events, emits add/remove/commit/rollback.
+- Type-safe contracts and zero `any`/type assertions.
 
-В прикладном коде часто нужно одновременно:
+## When to Use
+- Need Laravel-like collection helpers in TS without losing type safety.
+- Want to track entity/property changes and react to them (UI, logging, sync).
+- Need undo/rollback (single-step or transactional) on collections and their items.
+- Apply bulk operations via Visitor across collections.
 
-- хранить список доменных сущностей как коллекцию с удобными методами (в стиле Laravel Collections);
-- отслеживать изменения коллекции и сущностей (для реактивного UI, логирования, синхронизации);
-- уметь откатывать изменения (undo/rollback), в том числе группами (транзакционно);
-- применять операции ко всем элементам (Visitor).
-
-Этот пакет объединяет эти задачи в один типизированный набор примитивов: `BaseEntity` + `BaseCollection`.
-
-
-## Архитектура
-
-### Сущности
-
-- **BaseEntity**  
-  Реализует преобразование plain-объектов в экземпляры с помощью _class-transformer_ и валидацию с использованием _class-validator_.  
-  Содержит встроенные механизмы эмита событий жизненного цикла (создание, обновление, удаление, восстановление) посредством RxJS Subject.  
-  Отслеживание изменений отдельных свойств осуществляется через Proxy, который перехватывает операции записи и эмитирует события до и после обновления свойства.  
-  Интерфейс IObservable позволяет получать поток изменений отдельных свойств через методы `getEntityObservable()` и `getPropertyObservable()`.
-
-### Коллекции
-
-#### Возможности
-#### 1. Основные возможности класса BaseCollection
-
-Класс `BaseCollection` предоставляет функциональность коллекций в стиле Laravel и дополняет её следующими возможностями:
-
-- **Memento (снапшоты состояния):**  
-  При изменении коллекции (например, `add`/`remove`) может создаваться снапшот текущего состояния. Снапшоты сохраняются в истории коллекции и позволяют делать `rollback()`.
-
-- **Observer (эмит событий):**  
-  Коллекция использует `RxJS Subject` для эмита событий. События (например, `add`, `remove`, `commit`, `rollback`) можно подписывать через метод `subscribe()`. Также коллекция подписывается на изменения отдельных сущностей (если они реализуют интерфейс `IObservable`).
-
-- **Visitor:**  
-  Метод `accept(visitor: IVisitor<T>)` позволяет применять паттерн Посетитель ко всем элементам коллекции.
-
-- **Транзакционная модель:**  
-  Методы `beginTransaction()`, `commitTransaction()` и `rollbackTransaction()` позволяют группировать несколько операций в одну транзакцию. При начале транзакции фиксируется начальное состояние коллекции, и по завершении транзакции результат сохраняется с токеном состояния (меткой времени в мс).
-
-- **Трансформационные операции:**  
-  Методы `map` и `filter` переопределены для возврата экземпляров `BaseCollection`.
-
-#### 2. Инструкция по работе с BaseCollection
-
-##### 2.1. Создание коллекции
-
-```ts
-import { BaseCollection } from '@shanja-glinka/ts-collections-kit';
-
-const collection = new BaseCollection<number>([1, 2, 3]);
-```
-
-##### 2.2. Добавление и удаление элементов
-
-- **Добавление элемента:**
-
-  ```ts
-  collection.add(4); // Создаст снапшот (если нет активной транзакции), добавит элемент и эмитит событие 'add'
-  ```
-
-- **Удаление элемента:**
-
-  ```ts
-  collection.remove(2); // Фиксирует состояние, удаляет элемент и эмитит событие 'remove'
-  ```
-
-##### 2.3. Использование снапшотов и транзакций
-
-- **Обычное фиксация изменений:**
-
-  ```ts
-  // Фиксируем текущее состояние коллекции (очищаем историю снапшотов)
-  collection.commit();
-  ```
-
-- **Откат последнего изменения:**
-
-  ```ts
-  // Откат к предыдущему состоянию (вне транзакции)
-  collection.rollback();
-  ```
-
-- **Использование транзакции:**
-
-  ```ts
-  // Начало транзакции – фиксируется начальное состояние, генерируется токен транзакции.
-  const txToken = collection.beginTransaction();
-  
-  // Выполняем несколько операций
-  collection.add(5);
-  collection.remove(1);
-  
-  // Завершаем транзакцию – итоговое состояние фиксируется, эмитируется событие commit с токеном.
-  collection.commitTransaction();
-  
-  // Если необходимо откатить изменения в транзакции:
-  // collection.rollbackTransaction();
-  ```
-
-##### 2.4. Применение трансформационных операций
-
-- **Map:**
-
-  ```ts
-  const mappedCollection = collection.map((item) => item * 10);
-  // Возвращается новый экземпляр BaseCollection с результатом map.
-  ```
-
-- **Filter:**
-
-  ```ts
-  const filteredCollection = collection.filter((item) => item > 20);
-  // Возвращается новый экземпляр BaseCollection с отфильтрованными элементами.
-  ```
-
-##### 2.5. Подписка на события
-
-```ts
-const subscription = collection.subscribe((event) => {
-  console.log(`Событие коллекции: ${event.type}`, event.payload);
-});
-
-// Не забудьте отписаться при завершении работы:
-subscription.unsubscribe();
-```
-
-##### 2.6. Применение паттерна Visitor
-
-```ts
-import { IVisitor } from '@shanja-glinka/ts-collections-kit';
-
-class PrintVisitor implements IVisitor<number> {
-  visit(item: number): void {
-    console.log('Элемент коллекции:', item);
-  }
-}
-
-collection.accept(new PrintVisitor());
-```
-
-
-#### 3. Рекомендации по работе с BaseCollection
-
-- **Инициализация коллекции:**  
-  При создании экземпляра `BaseCollection` передавайте начальный массив элементов, если он есть.
-
-- **Использование методов трансформации:**  
-  Методы `map` и `filter` возвращают новый экземпляр `BaseCollection`, поэтому при выполнении этих операций можно продолжать цепочку вызовов, сохраняя при этом расширенный функционал.
-
-- **Снапшоты и транзакции:**  
-  При группировке нескольких изменений (например, внутри метода `map`) используйте транзакционную модель для аккумулирования изменений и получения корректного токена состояния.
-
-- **Подписка на события:**  
-  Используйте метод `subscribe` для получения уведомлений о событиях коллекции. Это удобно для реализации реактивных интерфейсов и отладки.
-
-
-### Применение Visitor
-
-Паттерн Visitor позволяет пройтись по каждому элементу коллекции и выполнить заданное действие. В реализации, например, класс _NotificationReadVisitor_ изменяет значение свойства `isRead` на `true` для каждого уведомления. Изменения свойств отслеживаются автоматически через `Proxy` в `BaseEntity`.
-
-## Инструкция по использованию
-
-### Установка
-
-Установить пакет:
-
+## Installation
 ```bash
 npm install @shanja-glinka/ts-collections-kit
 ```
 
-Для разработки внутри репозитория установить зависимости:
+## Quick Start
+```ts
+import { BaseCollection, BaseEntity, EntityEvent } from '@shanja-glinka/ts-collections-kit';
 
-```bash
-npm install
+class Todo extends BaseEntity {
+  public title!: string;
+  public done = false;
+}
+
+const todos = new BaseCollection<Todo>([]);
+
+const sub = todos.subscribe((event) => {
+  if (event.type === EntityEvent.Updated) {
+    console.log('Entity updated', event.payload);
+  }
+});
+
+const todo = new Todo();
+todo.title = 'Ship release';
+
+todos.add(todo);          // emits 'add'
+todo.done = true;         // emits EntityEvent.Updated via collection
+
+todos.beginTransaction(); // transactional group
+todo.title = 'Ship release v2';
+todos.rollbackTransaction(); // restores previous entity state
+
+sub.unsubscribe();
 ```
 
-Основные зависимости включают:
-- TypeScript
-- rxjs
-- lodash
-- class-transformer
-- class-validator
+## Entities
+- `BaseEntity.plainToInstance()` turns plain objects into validated entities (class-transformer + class-validator).
+- Lifecycle hooks: `creating/created/updating/updated/deleting/deleted/restoring/restored`.
+- Observables: `getEntityObservable()` (lifecycle) and `getPropertyObservable()` (property-level changes).
+- Snapshots on entities: `captureSnapshot()` / `restoreSnapshot()` restore state without emitting events.
 
-### Сборка
+## Collections
+- Full `collect.js` runtime API (map/filter/reduce/where/... 120+ methods).
+- Snapshots: `rollback()` restores last snapshot; `commit()` clears history.
+- Transactions: `beginTransaction()/commitTransaction()/rollbackTransaction()`; state and entity snapshots restored on rollback.
+- Events: `add`, `remove`, `commit`, `rollback`, plus forwarded entity events.
+- Visitor: `accept(visitor)` applies your `visit()` to each item.
+- Typed map/filter: still return `BaseCollection`, preserving chainability + added features.
 
-Сборка выполняется с помощью команд:
+## Usage Patterns
+- **Snapshots only**: enableSnapshots: true (create snapshot before mutations).
+- **Transactions**: enableSnapshots + enableTransactions to group mutations; rollback restores items and entity state.
+- **Observers**: subscribe via `collection.subscribe()` or entity `subscribeEntityEvents/subscribePropertyEvents`.
+- **Visitor**: implement `IVisitor<T>` with `visit(item: T): void` and call `collection.accept(visitor)`.
 
-- Для сборки CommonJS:
-  ```bash
-  npm run build:cjs
-  ```
+## Testing
+- Unit tests (Jest, verbose): `npm test`
+- Lint: `npm run lint:check`
 
-- Для сборки ES-модулей:
-  ```bash
-  npm run build:esm
-  ```
-
-- Полная сборка (очистка `dist`, сборка CJS, переименование, сборка ESM):
-  ```bash
-  npm run build
-  ```
-
-### Тестирование
-
-Для запуска тестового примера используется команда:
-
+## Performance Benchmarks
+Run synthetic benchmarks (limits to avoid OOM; see env caps):
 ```bash
-npm run test
+PERF_ITEMS=50000 PERF_SNAPSHOT_ITEMS=2000 npm run perf
 ```
+- `PERF_ITEMS` — dataset size for numeric benchmarks (default 50,000).
+- `PERF_SNAPSHOT_ITEMS` — cap for snapshot-heavy tests (default 2,000, max 10,000) to avoid heap exhaustion.
 
-Эта команда запускает unit-тесты Jest (см. `src/tests/*.spec.ts`).
+## Build & Publish
+- Build artifacts (CJS + ESM + types): `npm run build` (cleans `dist`).
+- Prepublish hook already runs `build` (`prepublishOnly`).
+- Export map:
+  - CJS: `dist/cjs/main.cjs`
+  - ESM: `dist/esm/main.js`
+  - Types: `dist/esm/main.d.ts`
+- Files published: only `dist` (see `package.json:files`).
+
+## Supported Stack
+- Node 18+ recommended
+- TypeScript 5.x
+- Dependencies: `collect.js`, `rxjs`, `lodash`, `class-transformer`, `class-validator`, `reflect-metadata`
+
+## API Surface (top-level)
+- Classes: `BaseCollection`, `BaseEntity`
+- Types/interfaces: `ICollection`, `IObservable`, `IVisitor`, `IBaseEntity`, `ICollectionOptions`, `CollectionEvent`, `EntityEvent`, etc.
+- Utils: `deepClone`
 
 #### Нагрузочное тестирование
 
