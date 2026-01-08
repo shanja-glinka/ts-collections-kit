@@ -1,6 +1,6 @@
 {
   "name": "@shanja-glinka/ts-collections-kit",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "main": "dist/cjs/main.cjs",
   "module": "dist/esm/main.js",
   "types": "dist/esm/main.d.ts",
