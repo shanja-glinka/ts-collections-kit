@@ -1,8 +1,7 @@
-import { plainToInstance } from 'class-transformer';
-import { validate, ValidationError } from 'class-validator';
 import 'reflect-metadata';
 import { Observable, Subject, Subscription } from 'rxjs';
 import { IBaseTransformEntityContract } from '../contracts/base-transform-entity.contract';
+import { IEntityTransformStrategy } from '../contracts/entity-transform-strategy.contract';
 import { IObservable } from '../contracts/observable.contract';
 import { IBaseEntity } from '../interfaces/base.entity.interface';
 import {
@@ -12,6 +11,7 @@ import {
   IPropertyEventPayload,
 } from '../observers/observable.interface';
 import { deepClone } from '../utils/clone';
+import { ClassValidatorTransformStrategy } from '../transformers/class-validator-transformer';
 
 /**
  * Base entity with:
@@ -27,14 +27,22 @@ export class BaseEntity
 {
   /** Entity identifier. */
   public id!: string;
-  /** Creation timestamp. */
-  public createdAt!: Date;
-  /** Update timestamp. */
-  public updatedAt!: Date;
-  /** Creator identifier. */
-  public createdBy!: string;
-  /** Updater identifier. */
-  public updatedBy!: string;
+
+  /** Transformation strategy (can be swapped for custom implementations). */
+  private static transformStrategy: IEntityTransformStrategy =
+    new ClassValidatorTransformStrategy();
+
+  /**
+   * Allows applications to override the transformation/validation strategy.
+   *
+   * @param {IEntityTransformStrategy} strategy - Custom strategy instance.
+   * @returns {void}
+   */
+  public static setTransformStrategy(
+    strategy: IEntityTransformStrategy,
+  ): void {
+    BaseEntity.transformStrategy = strategy;
+  }
 
   /**
    * RxJS subject for entity lifecycle events.
@@ -267,38 +275,7 @@ export class BaseEntity
     this: new () => T,
     plain: object,
   ): Promise<T> {
-    const instance = plainToInstance(this, plain, {
-      excludeExtraneousValues: true,
-    });
-
-    const errors = await validate(instance);
-
-    if (errors.length > 0) {
-      const errorMessage = BaseEntity.formatValidationErrors(errors);
-      throw new Error(errorMessage);
-    }
-
-    return instance;
-  }
-
-  /**
-   * Formats validation errors into a readable string.
-   *
-   * @param {ValidationError[]} errors - Validation errors.
-   *
-   * @returns {string} Human-readable error message.
-   */
-  private static formatValidationErrors(errors: ValidationError[]): string {
-    const messages: string[] = [];
-
-    for (const error of errors) {
-      const constraints = error.constraints
-        ? Object.values(error.constraints).join(', ')
-        : 'Unknown validation error';
-      messages.push(`Property: ${error.property} - ${constraints}`);
-    }
-
-    return messages.join('\n');
+    return BaseEntity.transformStrategy.plainToInstance(this, plain);
   }
 
   /**

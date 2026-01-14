@@ -1,4 +1,4 @@
-import { BaseEntity } from '../../entities/base-entity';
+import { AuditedSoftDeletableEntity } from '../../entities/audited-entity';
 import { INotification } from './notification.interface';
 
 /**
@@ -6,7 +6,10 @@ import { INotification } from './notification.interface';
  *
  * Extends `BaseEntity` to inherit lifecycle events and property-change tracking.
  */
-export class Notification extends BaseEntity implements INotification {
+export class Notification
+  extends AuditedSoftDeletableEntity
+  implements INotification
+{
   /**
    * Notification text (HTML is allowed in this example).
    */

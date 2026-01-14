@@ -1,6 +1,7 @@
 import { Collection } from 'collect.js';
 import type { CollectionKey } from 'collect.js';
 import { Subject, Subscription } from 'rxjs';
+import { CollectAdapter } from './collect-adapter';
 import { IObservable } from '../contracts/observable.contract';
 import { IVisitor } from '../contracts/visitor.contract';
 import { ICollectionOptions } from '../interfaces/collection-options.interface';
@@ -53,7 +54,11 @@ interface ICollectionSnapshot<TItem> {
  */
 export class BaseCollection<T> extends Collection<T> implements ICollection<T> {
   /** Collection options controlling snapshots and transactions. */
-  protected options: Required<ICollectionOptions>;
+  protected options: {
+    enableSnapshots: boolean;
+    enableTransactions: boolean;
+    snapshotLimit?: number;
+  };
 
   /**
    * Global snapshot history.
@@ -73,6 +78,8 @@ export class BaseCollection<T> extends Collection<T> implements ICollection<T> {
   protected eventsSubject = new Subject<CollectionEvent<T>>();
   /** Subscriptions to entity observables inside the collection. */
   protected entitySubscriptions: Subscription[] = [];
+  /** Adapter that isolates collect.js internals. */
+  protected collectAdapter: CollectAdapter<T>;
 
   /**
    * Creates a collection instance.
@@ -86,7 +93,9 @@ export class BaseCollection<T> extends Collection<T> implements ICollection<T> {
     this.options = {
       enableSnapshots: options?.enableSnapshots ?? false,
       enableTransactions: options?.enableTransactions ?? false,
+      snapshotLimit: options?.snapshotLimit ?? 5,
     };
+    this.collectAdapter = new CollectAdapter<T>();
 
     // Subscribe to observable entities (when present) in the initial set.
     for (const item of initialItems ?? []) {
@@ -264,7 +273,7 @@ export class BaseCollection<T> extends Collection<T> implements ICollection<T> {
    * @returns {void}
    */
   private replaceItems(nextItems: readonly T[]): void {
-    Reflect.set(this, 'items', Array.from(nextItems));
+    this.collectAdapter.replaceItems(this, nextItems);
     this.resubscribeToAllItems();
   }
 
@@ -290,6 +299,7 @@ export class BaseCollection<T> extends Collection<T> implements ICollection<T> {
     const token = Date.now();
     const entry = this.captureCollectionSnapshot(token);
     this.history.push(entry);
+    this.enforceSnapshotLimit();
   }
 
   /**
@@ -345,6 +355,7 @@ export class BaseCollection<T> extends Collection<T> implements ICollection<T> {
     // Record the final state in snapshot history, when enabled.
     if (this.options.enableSnapshots) {
       this.history.push(this.captureCollectionSnapshot(token));
+      this.enforceSnapshotLimit();
     }
 
     // Reset transaction state.
@@ -472,6 +483,18 @@ export class BaseCollection<T> extends Collection<T> implements ICollection<T> {
   }
 
   /**
+   * Unsubscribes from entity streams and completes collection events.
+   *
+   * Use when the collection instance is no longer needed to avoid leaking subscriptions.
+   *
+   * @returns {void}
+   */
+  public dispose(): void {
+    this.unsubscribeFromAllEntities();
+    this.eventsSubject.complete();
+  }
+
+  /**
    * Applies a visitor to all items (Visitor pattern).
    *
    * @param {IVisitor<T>} visitor - Visitor instance.
@@ -573,5 +596,31 @@ export class BaseCollection<T> extends Collection<T> implements ICollection<T> {
     }
 
     return super.reduce(callback, initial);
+  }
+
+  /**
+   * Drops oldest snapshots when the configured limit is exceeded.
+   *
+   * @returns {void}
+   */
+  private enforceSnapshotLimit(): void {
+    if (!this.options.enableSnapshots) {
+      return;
+    }
+
+    const { snapshotLimit } = this.options;
+    if (snapshotLimit === undefined) {
+      return;
+    }
+
+    if (snapshotLimit <= 0) {
+      this.history = [];
+      return;
+    }
+
+    const overflow = this.history.length - snapshotLimit;
+    if (overflow > 0) {
+      this.history.splice(0, overflow);
+    }
   }
 }

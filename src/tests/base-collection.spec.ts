@@ -290,6 +290,30 @@ function defineBaseCollectionTests(): void {
     expect(errorMessage).toBe('No active transaction to commit.');
   }
 
+  /**
+   * Validates that disposing a collection stops event propagation and completes subscribers.
+   *
+   * @returns {void}
+   */
+  function shouldDisposeSubscriptionsAndStopForwardingEvents(): void {
+    const entity = new TestEntity();
+    const collection = new BaseCollection<TestEntity>([entity], {
+      enableSnapshots: true,
+    });
+
+    const events: Array<CollectionEvent<TestEntity>> = [];
+    const subscription = collection.subscribe((event) => {
+      events.push(event);
+    });
+
+    collection.dispose();
+
+    expect(subscription.closed).toBe(true);
+
+    entity.foo = 'disposed';
+    expect(events).toHaveLength(0);
+  }
+
   it('keeps collect.js runtime methods', shouldKeepCollectJsRuntimeMethods);
   it('forwards entity property events', shouldForwardEntityPropertyEvents);
   it('rolls back to previous snapshot', shouldRollbackToPreviousSnapshot);
@@ -316,6 +340,10 @@ function defineBaseCollectionTests(): void {
   it(
     'throws when committing without an active transaction',
     shouldThrowWhenCommittingWithoutActiveTransaction,
+  );
+  it(
+    'disposes subscriptions and stops forwarding events',
+    shouldDisposeSubscriptionsAndStopForwardingEvents,
   );
 }
 

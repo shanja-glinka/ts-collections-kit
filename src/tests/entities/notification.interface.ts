@@ -1,9 +1,9 @@
-import { IBaseEntity } from '../../interfaces/base.entity.interface';
+import { IAuditedSoftDeletableEntity } from '../../interfaces/audited-entity.interface';
 
 /**
  * Notification shape used in tests/examples.
  */
-export interface INotification extends IBaseEntity {
+export interface INotification extends IAuditedSoftDeletableEntity {
   /** Notification text. */
   text: string;
   /** Read flag. */

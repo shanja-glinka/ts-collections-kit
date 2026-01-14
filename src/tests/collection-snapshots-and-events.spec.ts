@@ -157,6 +157,33 @@ function defineCollectionSnapshotsAndEventsTests(): void {
     subscription.unsubscribe();
   }
 
+  /**
+   * Validates that snapshot history obeys the configured limit.
+   *
+   * Given: limit=2, perform 3 mutations that create snapshots.
+   * Expect: only the last 2 snapshots are stored and rollback follows the trimmed history.
+   *
+   * @returns {void}
+   */
+  function shouldTrimSnapshotsWhenLimitIsReached(): void {
+    const collection = new TestCollection<number>([1, 2], {
+      enableSnapshots: true,
+      snapshotLimit: 2,
+    });
+
+    collection.add(3); // snapshot #1 -> [1,2]
+    collection.add(4); // snapshot #2 -> [1,2,3]
+    collection.remove(1); // snapshot #3 -> [1,2,3,4], oldest dropped
+
+    expect(collection.getSnapshotCount()).toBe(2);
+
+    collection.rollback();
+    expect(collection.all()).toEqual([1, 2, 3, 4]);
+
+    collection.rollback();
+    expect(collection.all()).toEqual([1, 2, 3]);
+  }
+
   it(
     'creates snapshots on mutations and resets on commit',
     shouldCreateSnapshotsOnMutationsAndResetOnCommit,
@@ -164,6 +191,10 @@ function defineCollectionSnapshotsAndEventsTests(): void {
   it(
     'avoids snapshots during transactions and stores on commit',
     shouldAvoidSnapshotsDuringTransactionAndStoreOnCommit,
+  );
+  it(
+    'trims snapshot history when a limit is configured',
+    shouldTrimSnapshotsWhenLimitIsReached,
   );
 }
 

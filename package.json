@@ -1,6 +1,6 @@
 {
   "name": "@shanja-glinka/ts-collections-kit",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "main": "dist/cjs/main.cjs",
   "module": "dist/esm/main.js",
   "types": "dist/esm/main.d.ts",
@@ -31,17 +31,24 @@
   "type": "module",
   "sideEffects": false,
   "keywords": [
-    "collection",
+    "reactive",
+    "rxjs",
+    "observable",
+    "observer",
+    "visitor",
+    "domain-events",
     "laravel",
-    "typescript",
     "facade",
     "memento",
-    "visitor",
-    "observer"
+    "typescript",
+    "collection",
+    "collections",
+    "snapshot",
+    "transaction"
   ],
   "author": "Shanja Glinka",
   "license": "MIT",
-  "description": "Laravel-like collections and observable entities for TypeScript: snapshots, transactions, Visitor and Observer patterns.",
+  "description": "Type-safe Laravel-like collections with snapshots/transactions plus observable entities that can carry audit and soft-delete semantics out of the box.",
   "publishConfig": {
     "access": "public"
   },
